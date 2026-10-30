@@ -39,6 +39,8 @@ try {
   # marker too; and any 'ERROR' log line from the load is a failure. Matching ERROR
   # case-sensitively as a whole word keeps a font path containing 'error' from tripping
   # the gate, while the runtime-error pattern above stays case-insensitive.
+  # 'Unable to load a font' catches a typo in settings.font: the load still succeeds and
+  # still prints a fallback 'Primary font:', so without it a wrong family name would pass.
   $entry = Join-Path $root 'wezterm.lua'
   $loadText = ''
   $prevEap = $ErrorActionPreference
@@ -49,7 +51,7 @@ try {
     $ErrorActionPreference = $prevEap
   }
   $loadLines = @($loadText -split "`r?`n")
-  $loadBad = @($loadLines | Where-Object { ($_ -cmatch '\bERROR\b') -or ($_ -match 'runtime error|attempt to yield') })
+  $loadBad = @($loadLines | Where-Object { ($_ -cmatch '\bERROR\b') -or ($_ -match 'runtime error|attempt to yield') -or ($_ -match 'Unable to load a font') })
   if ($loadBad.Count -gt 0) {
     $loadBad | ForEach-Object { Write-Host $_ }
     Write-Error 'real entrypoint wezterm.lua failed to load'

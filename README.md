@@ -40,7 +40,7 @@
 ## 外观
 
 - 字体 `Maple Mono NF CN`，11pt，行高 1.0，`harfbuzz_features = { 'calt', 'liga' }`。配置只显式指定这一个家族（自带 CJK 与 Nerd 图标）；缺字由 WezTerm 内置回退（`JetBrains Mono` / `Noto Color Emoji` / `Symbols Nerd Font Mono` 等）补齐，`ls-fonts` 里能看到。
-- 窗口内边距 4、scrollback 10000 行由 `modules/settings.lua` 驱动，并在 `modules/appearance.lua` 里落到 `config`。`copy_on_select` 不是 WezTerm 20240203 的配置项（写进 `config` 会让整份配置加载失败并静默回退默认值），选中即复制是该版本默认的鼠标行为，所以不再暴露这个死开关。
+- 窗口内边距 4、scrollback 10000 行由 `modules/settings.lua` 驱动，并在 `modules/appearance.lua` 里落到 `config`。`copy_on_select` 不是 WezTerm 20240203 的配置项：在返回 `config` 表的配置里写入它会因字段无效导致整份配置被丢弃（不是静默忽略），选中即复制是该版本默认的鼠标行为，所以不再暴露这个死开关。
 
 ## 自定义配色
 
