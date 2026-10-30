@@ -13,12 +13,27 @@ end
 
 -- 大写字母键在 20240203 会归一化：SHIFT 隐含在字符里，show-keys 把它显示成
 -- CTRL S，但实际匹配的仍是 Ctrl+Shift+S（见 WezTerm 20201031 发行说明）。
+-- 带 shift 的符号键（- \ ?）在 US 布局上可能以 shifted 字符（_ | /）投递，
+-- 也可能以基础键 + SHIFT 投递；WezTerm 自己的默认绑定就同时注册了两种拼写。
+-- 这里给每个动作补一份 alt 拼写，命中哪个都执行同一动作（只会触发一次）。
 M.entries = {
   { key = 'T', mods = 'CTRL|SHIFT', label = '新建标签页', run = do_action(wezterm.action.SpawnTab 'CurrentPaneDomain') },
   { key = 'S', mods = 'CTRL|SHIFT', label = '新建标签页并选择 shell', run = shells.picker_action(settings) },
   { key = 'A', mods = 'CTRL|SHIFT', label = '切换配色方案', run = colors.picker_action(settings) },
-  { key = '\\', mods = 'CTRL|SHIFT', label = '左右分屏', run = do_action(wezterm.action.SplitHorizontal { domain = 'CurrentPaneDomain' }) },
-  { key = '-', mods = 'CTRL|SHIFT', label = '上下分屏', run = do_action(wezterm.action.SplitVertical { domain = 'CurrentPaneDomain' }) },
+  {
+    key = '\\',
+    mods = 'CTRL|SHIFT',
+    label = '左右分屏',
+    alts = { { key = '|' } },
+    run = do_action(wezterm.action.SplitHorizontal { domain = 'CurrentPaneDomain' }),
+  },
+  {
+    key = '-',
+    mods = 'CTRL|SHIFT',
+    label = '上下分屏',
+    alts = { { key = '_' } },
+    run = do_action(wezterm.action.SplitVertical { domain = 'CurrentPaneDomain' }),
+  },
   -- 20240203 只接受物理键码名（LeftArrow/RightArrow/UpArrow/DownArrow），
   -- 'Left'/'Right' 这类写法会报 invalid KeyCode string 并让整个配置加载失败。
   { key = 'LeftArrow', mods = 'ALT', label = '切到左侧 pane', run = do_action(wezterm.action.ActivatePaneDirection 'Left') },
@@ -38,7 +53,7 @@ M.entries = {
       },
     }),
   },
-  { key = '?', mods = 'CTRL|SHIFT', label = '快捷键帮助', run = nil }, -- 下面补
+  { key = '?', mods = 'CTRL|SHIFT', label = '快捷键帮助', alts = { { key = '/' } }, run = nil }, -- 下面补
 }
 
 -- 帮助浮层：列出全部自定义键，选中即执行
@@ -60,8 +75,14 @@ end
 
 function M.build(entries, action_cb)
   local list = {}
-  for i, e in ipairs(entries) do
-    list[i] = { key = e.key, mods = e.mods, action = action_cb(e.run) }
+  for _, e in ipairs(entries) do
+    -- 同一动作的 alt 拼写复用同一个 action（同一个 EmitEvent），不重复创建回调；
+    -- 帮助浮层仍按 entries 生成，一个动作只显示一行。
+    local action = action_cb(e.run)
+    list[#list + 1] = { key = e.key, mods = e.mods, action = action }
+    for _, alt in ipairs(e.alts or {}) do
+      list[#list + 1] = { key = alt.key, mods = alt.mods or e.mods, action = action }
+    end
   end
   return list
 end
