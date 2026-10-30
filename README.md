@@ -48,7 +48,7 @@
 - 与内置方案同名时会覆盖内置方案（这是 WezTerm 文档行为，本仓库未在命令行里单独实测）。
 - `Ctrl+Shift+A` 打开选择器，输入可模糊过滤；列表顺序 `[最近]`（最多 5 条，跨配置重载保留）→ `[自定义]` → 内置（按名称排序）。
 - 选中后通过 `set_config_overrides` 只改当前窗口的配色，不写盘，也不冲掉其他 override；重启回到 `modules/settings.lua` 的 `default_scheme`（默认 `Catppuccin Mocha`）。
-- `default_scheme` 既可以是内置方案名，也可以是 `colors/<name>.toml` 的文件名；带 `[metadata] name` 的文件会按 metadata 里的真实方案名生效。两者都匹配不到时告警并落回 WezTerm 默认配色。
+- `default_scheme` 既可以是内置方案名，也可以是 `colors/` 下某个文件的**文件名（不含 `.toml`）**；按文件名找到文件后，实际生效的仍是该文件 `[metadata] name` 里的真实方案名。两者都匹配不到时告警并落回 WezTerm 默认配色。
 - 改 `default_scheme` 或往 `colors/` 放新文件后按 `Ctrl+Shift+R` 重载：列表会刷新，然后选中即生效。
 
 ## 自定义 shell
