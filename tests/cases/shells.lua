@@ -11,7 +11,23 @@ return {
     check('default_prog falls back to powershell 5.1', shells.default_prog(s, only_ps51)[1] == 'powershell.exe')
 
     local none = function() return false end
-    check('default_prog falls back to cmd', shells.default_prog(s, none)[1] == 'cmd.exe')
+    local fb = shells.default_prog(s, none)
+    check('default_prog falls back to last shells_order entry from settings', fb[1] == s.shells.cmd.prog)
+    check('fallback copies that entry argv', #fb == 1 + #s.shells.cmd.args)
+
+    -- 合成 settings：证明回退项与 argv 都来自 settings，而非硬编码
+    local fake = {
+      shells_order = { 'alpha', 'ghost', 'omega' },
+      shells = {
+        alpha = { prog = 'alpha.exe', args = { '-a' } },
+        omega = { prog = 'omega.exe', args = { '-o', '--x' } },
+      },
+    }
+    local ff = shells.default_prog(fake, none)
+    check('fallback uses last defined shells_order entry', ff[1] == 'omega.exe')
+    check('fallback copies fallback argv', #ff == 3 and ff[2] == '-o' and ff[3] == '--x')
+    ff[2] = 'mutated'
+    check('fallback does not alias settings argv', fake.shells.omega.args[1] == '-o')
 
     local all = function() return true end
     local ch = shells.choices(s, all)

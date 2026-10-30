@@ -2,6 +2,21 @@ local wezterm = require 'wezterm'
 
 local M = {}
 
+-- 复制 prog + argv 到新表，避免返回值引用 settings 里的表
+local function prog_with_args(sh)
+  local out = { sh.prog }
+  for i, a in ipairs(sh.args or {}) do out[i + 1] = a end
+  return out
+end
+
+-- 回退源：shells_order 中最后一个仍在 settings 里定义的候选（默认即 cmd）
+local function last_defined(s)
+  for i = #s.shells_order, 1, -1 do
+    local sh = s.shells[s.shells_order[i]]
+    if sh then return sh end
+  end
+end
+
 -- prog 可能是绝对路径，也可能只是 PATH 中的文件名
 function M.exists(prog)
   if type(prog) ~= 'string' or prog == '' then return false end
@@ -20,13 +35,16 @@ function M.default_prog(s, exists_fn)
   for _, key in ipairs(s.shells_order) do
     local sh = s.shells[key]
     if sh and exists_fn(sh.prog) then
-      local out = { sh.prog }
-      for i, a in ipairs(sh.args) do out[i + 1] = a end
-      return out
+      return prog_with_args(sh)
     end
   end
-  wezterm.log_warn('wezterm-config: 未找到任何候选 shell，回退到 cmd.exe')
-  return { 'cmd.exe' }
+  local sh = last_defined(s)
+  if not sh then
+    wezterm.log_warn('wezterm-config: shells_order 中没有已定义的 shell，使用平台默认 shell')
+    return {}
+  end
+  wezterm.log_warn('wezterm-config: 未找到任何候选 shell，回退到 ' .. sh.prog)
+  return prog_with_args(sh)
 end
 
 function M.choices(s, exists_fn)
