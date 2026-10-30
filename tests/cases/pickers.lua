@@ -4,13 +4,18 @@ local colors = require 'modules.colors'
 local s = require 'modules.settings'
 
 -- 假 window：记录 perform_action 的动作与 pane，并模拟 config overrides 读写。
+-- 真 WezTerm 的 get_config_overrides 每次返回新表（nil 时返回 nil），不会把内部
+-- 状态交出去；这里同样返回副本，测试只能断言字段，不能断言与 fake 内部是同一张表。
 local function make_window(overrides)
   local w = { performed = {}, set_calls = {}, overrides = overrides }
   function w:perform_action(action, p)
     self.performed[#self.performed + 1] = { action = action, pane = p }
   end
   function w:get_config_overrides()
-    return self.overrides
+    if self.overrides == nil then return nil end
+    local copy = {}
+    for k, v in pairs(self.overrides) do copy[k] = v end
+    return copy
   end
   function w:set_config_overrides(o)
     self.overrides = o
@@ -35,72 +40,97 @@ local function with_captured_callback(body)
   return captured
 end
 
-local function make_shell_window()
-  local win = make_window()
-  local pane = { tag = 'pane-1' }
-  return win, pane
+local function make_window_and_pane()
+  return make_window(), { tag = 'pane-1' }
+end
+
+local function argv_equal(actual, expected)
+  if type(actual) ~= 'table' or #actual ~= #expected then return false end
+  for i = 1, #expected do
+    if actual[i] ~= expected[i] then return false end
+  end
+  return true
+end
+
+local function list_equal(a, b)
+  if type(a) ~= 'table' or type(b) ~= 'table' or #a ~= #b then return false end
+  for i = 1, #a do
+    if a[i] ~= b[i] then return false end
+  end
+  return true
 end
 
 return {
   run = function(check)
     -- ---------- shells.picker_action ----------
-    local expected = shells.choices(s)
-    check('shell picker test needs at least two detected shells', #expected >= 2)
+    -- 合成 settings + 桩 shells.exists：断言与宿主实际装了哪些 shell 无关。
+    local fake = {
+      shell_menu_order = { 'a', 'b' },
+      shells = {
+        a = { label = 'A', prog = 'pwsh.exe', args = { '-NoLogo' } },
+        b = { label = 'B', prog = 'cmd.exe', args = {} },
+      },
+    }
 
-    local win, pane = make_shell_window()
-    local shell_cb = with_captured_callback(function()
-      shells.picker_action(s)(win, pane)
-    end)
+    local orig_exists = shells.exists
+    shells.exists = function() return true end
 
-    check('shell picker performs exactly one action', #win.performed == 1)
-    local first = win.performed[1]
-    check('shell picker passes pane to perform_action', first ~= nil and first.pane == pane)
-    local is = first and first.action.InputSelector
-    check('shell picker builds InputSelector', is ~= nil)
-    check('shell picker title and fuzzy', is ~= nil and is.title == '在哪个 shell 打开新标签？' and is.fuzzy == true)
-    check('shell picker registers a real callback action', is ~= nil and is.action ~= nil and type(is.action.EmitEvent) == 'string')
+    local ok_shell, err_shell = pcall(function()
+      local win, pane = make_window_and_pane()
+      local shell_cb = with_captured_callback(function()
+        shells.picker_action(fake)(win, pane)
+      end)
 
-    local labels_ok, ids_ok = is ~= nil, is ~= nil
-    if is then
-      if #is.choices ~= #expected then labels_ok = false end
-      for i, e in ipairs(expected) do
-        local c = is.choices[i]
-        if not c or c.label ~= e.label then labels_ok = false end
-        if not c or c.id ~= tostring(i) then ids_ok = false end
-      end
-    end
-    check('shell picker choices labels match shells.choices', labels_ok)
-    check('shell picker choices ids are 1-based strings', ids_ok)
+      check('shell picker performs exactly one action', #win.performed == 1)
+      local first = win.performed[1]
+      check('shell picker passes pane to perform_action', first ~= nil and first.pane == pane)
+      local is = first and first.action.InputSelector
+      check('shell picker builds InputSelector', is ~= nil)
+      check('shell picker title and fuzzy', is ~= nil and is.title == '在哪个 shell 打开新标签？' and is.fuzzy == true)
+      check('shell picker registers a real callback action', is ~= nil and is.action ~= nil and type(is.action.EmitEvent) == 'string')
 
-    check('shell picker captured callback', type(shell_cb) == 'function')
-    if type(shell_cb) == 'function' and is ~= nil and #expected >= 2 then
-      local target = expected[2]
-      local pane2 = { tag = 'pane-2' }
-      win.performed = {}
-      local ok, cerr = pcall(shell_cb, win, pane2, '2')
-      check('shell callback runs without error', ok, cerr)
-      local spawn = win.performed[1] and win.performed[1].action.SpawnCommandInNewTab
-      check('shell callback spawns new tab', spawn ~= nil)
-      check('shell callback uses the callback pane', win.performed[1] ~= nil and win.performed[1].pane == pane2)
-      -- 20240203 的 SpawnCommand 没有 prog 字段，prog 必须是 args[1]
-      local argv_ok = spawn ~= nil and spawn.args ~= nil and #spawn.args == 1 + #target.args
-        and spawn.args[1] == target.prog
-      if argv_ok then
-        for i = 1, #target.args do
-          if spawn.args[i + 1] ~= target.args[i] then argv_ok = false end
+      local labels_ok, ids_ok = is ~= nil, is ~= nil
+      if is then
+        if #is.choices ~= 2 then labels_ok = false end
+        local want = { { id = '1', label = 'A' }, { id = '2', label = 'B' } }
+        for i, e in ipairs(want) do
+          local c = is.choices[i]
+          if not c or c.label ~= e.label then labels_ok = false end
+          if not c or c.id ~= e.id then ids_ok = false end
         end
       end
-      check('shell callback spawns choice 2 prog as argv[1]', spawn ~= nil and spawn.args ~= nil and spawn.args[1] == target.prog)
-      check('shell callback appends choice 2 args', argv_ok)
-      check('choice 2 actually carries argv (pins args, not just prog)', #target.args > 0)
-    end
+      check('shell picker choices labels match synthetic settings', labels_ok)
+      check('shell picker choices ids are 1-based strings', ids_ok)
 
-    -- 没有可用 shell 时不弹选择器
+      check('shell picker captured callback', type(shell_cb) == 'function')
+      if type(shell_cb) == 'function' then
+        -- 两个选择都断言完整 argv：空 args 的 shape 也必须只剩 argv[1]。
+        local cases = {
+          { id = '1', argv = { 'pwsh.exe', '-NoLogo' } },
+          { id = '2', argv = { 'cmd.exe' } },
+        }
+        for _, case in ipairs(cases) do
+          local pane2 = { tag = 'pane-' .. case.id }
+          win.performed = {}
+          local ok, cerr = pcall(shell_cb, win, pane2, case.id)
+          check('shell callback ' .. case.id .. ' runs without error', ok, cerr)
+          local spawn = win.performed[1] and win.performed[1].action.SpawnCommandInNewTab
+          check('shell callback ' .. case.id .. ' spawns new tab', spawn ~= nil)
+          check('shell callback ' .. case.id .. ' uses the callback pane', win.performed[1] ~= nil and win.performed[1].pane == pane2)
+          check('shell callback ' .. case.id .. ' pins exact SpawnCommandInNewTab argv',
+            spawn ~= nil and argv_equal(spawn.args, case.argv))
+        end
+      end
+    end)
+    shells.exists = orig_exists
+    if not ok_shell then error(err_shell) end
+
+    -- 没有可用 shell 时不弹选择器（回到真实 exists；这个 prog 一定不存在）
     local none = {
       shell_menu_order = { 'nope' },
       shells = { nope = { label = 'Nope', prog = 'definitely-not-a-real-program-xyz.exe', args = {} } },
     }
-    local nwin, npane = make_shell_window()
+    local nwin, npane = make_window_and_pane()
     local no_cb = with_captured_callback(function()
       shells.picker_action(none)(nwin, npane)
     end)
@@ -159,15 +189,29 @@ return {
       if type(color_cb) == 'function' and cis ~= nil then
         local ok2 = pcall(color_cb, cwin, cpane, '3')
         check('color callback runs without error', ok2)
-        check('color callback sets color_scheme from chosen id', cwin.overrides.color_scheme == 'my-theme')
-        check('color callback preserves existing overrides', cwin.overrides.font_size == 13)
-        check('color callback writes overrides through window', #cwin.set_calls == 1 and cwin.set_calls[1] == cwin.overrides)
+        -- 真 API 返回副本，只能断言写回 window 的那张表的字段，不能断言同一性
+        local written = cwin.set_calls[1]
+        check('color callback writes color_scheme from chosen id', written ~= nil and written.color_scheme == 'my-theme')
+        check('color callback preserves existing overrides', written ~= nil and written.font_size == 13)
+        check('color callback writes overrides through window', #cwin.set_calls == 1)
         local recents = wezterm.GLOBAL.recent_schemes
         check('color callback pushes chosen name into recents', recents[1] == 'my-theme' and recents[2] == 'Tokyo Night')
 
-        local before = cwin.overrides.color_scheme
+        -- nil overrides：真 API 可能返回 nil，回调必须自行新建表
+        local nwin = make_window(nil)
+        local nok = pcall(color_cb, nwin, cpane, '4')
+        check('color callback handles nil overrides', nok and #nwin.set_calls == 1)
+        check('color callback writes picked scheme when overrides are nil',
+          nwin.set_calls[1] ~= nil and nwin.set_calls[1].color_scheme == 'Catppuccin Mocha')
+
+        -- unknown id：不写 overrides、不动 recents
+        local before = cwin.set_calls[1].color_scheme
+        local recents_before = {}
+        for i, v in ipairs(wezterm.GLOBAL.recent_schemes) do recents_before[i] = v end
         pcall(color_cb, cwin, cpane, '99')
-        check('color callback ignores unknown id', cwin.overrides.color_scheme == before and #cwin.set_calls == 1)
+        check('color callback ignores unknown id', cwin.set_calls[1].color_scheme == before and #cwin.set_calls == 1)
+        check('color callback leaves recents unchanged for unknown id',
+          list_equal(wezterm.GLOBAL.recent_schemes, recents_before))
       end
     end)
 
@@ -175,5 +219,34 @@ return {
     colors.builtin_names = orig_builtin
     colors.list_custom = orig_custom
     if not ok then error(err) end
+
+    -- ---------- colors.picker_action: 空菜单 ----------
+    local orig_global2 = wezterm.GLOBAL
+    local orig_custom2 = colors.list_custom
+    local orig_get_builtin = wezterm.color.get_builtin_schemes
+    local orig_warn = wezterm.log_warn
+    local warnings = {}
+    wezterm.log_warn = function(msg) warnings[#warnings + 1] = msg end
+
+    local ok_empty, err_empty = pcall(function()
+      wezterm.GLOBAL = {}
+      -- builtin 不可用：走 colors.builtin_names 里 pcall 的兜底路径
+      wezterm.color.get_builtin_schemes = function() return {} end
+      colors.list_custom = function() return {} end
+
+      local ewin, epane = make_window_and_pane()
+      colors.picker_action(s)(ewin, epane)
+
+      check('color picker performs nothing when no scheme exists', #ewin.performed == 0)
+      check('color picker warns exactly once when empty', #warnings == 1)
+      check('color picker warning names the empty scheme list',
+        warnings[1] ~= nil and warnings[1]:find('没有可用的配色方案', 1, true) ~= nil)
+    end)
+
+    wezterm.GLOBAL = orig_global2
+    colors.list_custom = orig_custom2
+    wezterm.color.get_builtin_schemes = orig_get_builtin
+    wezterm.log_warn = orig_warn
+    if not ok_empty then error(err_empty) end
   end,
 }

@@ -105,6 +105,10 @@ function M.picker_action(s)
   return function(window, pane)
     local custom_dir = wezterm.config_dir .. '/colors'
     local merged = M.merge(M.builtin_names(), M.list_custom(custom_dir), M.recent_names())
+    if #merged == 0 then
+      wezterm.log_warn('wezterm-config: 没有可用的配色方案')
+      return
+    end
 
     local choices = {}
     for i, item in ipairs(merged) do
