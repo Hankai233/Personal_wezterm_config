@@ -86,10 +86,31 @@ function M.choices(s, exists_fn)
   return out
 end
 
--- Task 6 实现：菜单动作（此处先占位返回函数，Task 6 用真实内容替换）
+-- 菜单动作：按下键时才枚举 shell 与文件，配置加载阶段不做任何 IO
 function M.picker_action(s)
   return function(window, pane)
-    wezterm.log_warn('wezterm-config: shell 菜单尚未实现')
+    local items = M.choices(s)
+    if #items == 0 then
+      wezterm.log_warn('wezterm-config: 没有可用的 shell')
+      return
+    end
+    local choices = {}
+    for i, it in ipairs(items) do
+      choices[i] = { id = tostring(i), label = it.label }
+    end
+    window:perform_action(wezterm.action.InputSelector {
+      title = '在哪个 shell 打开新标签？',
+      fuzzy = true,
+      choices = choices,
+      action = wezterm.action_callback(function(win, p, id)
+        local it = items[tonumber(id)]
+        if not it then return end
+        -- 20240203 的 SpawnCommand 没有 prog 字段：可执行文件必须是 args[1]
+        win:perform_action(wezterm.action.SpawnCommandInNewTab {
+          args = prog_with_args(it),
+        }, p)
+      end),
+    }, pane)
   end
 end
 
