@@ -28,5 +28,4 @@ return {
 
   scrollback_lines = 10000,
   window_padding = { left = 4, right = 4, top = 4, bottom = 4 },
-  copy_on_select = true,
 }

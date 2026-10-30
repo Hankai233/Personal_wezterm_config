@@ -56,19 +56,34 @@ M.entries = {
   { key = '?', mods = 'CTRL|SHIFT', label = '快捷键帮助', alts = { { key = '/' } }, run = nil }, -- 下面补
 }
 
+-- 帮助浮层的选项：按 entries 顺序生成，id 是 1-based 字符串。
+-- 单独抽出来，测试才能断言“选项数量/标签与 entries 一一对应”。
+function M.help_choices(entries)
+  local choices = {}
+  for i, e in ipairs(entries) do
+    choices[i] = {
+      id = tostring(i),
+      label = string.format('%-14s %s', e.mods .. '+' .. e.key, e.label),
+    }
+  end
+  return choices
+end
+
+-- 帮助浮层选中后按 id 回到对应 entry 并执行它自己的 run。
+-- 单独抽出来，测试可以用桩 entries 证明“选中哪个就执行哪个”。
+function M.dispatch(entries, id, window, pane)
+  local e = entries[tonumber(id)]
+  if e and e.run then e.run(window, pane) end
+end
+
 -- 帮助浮层：列出全部自定义键，选中即执行
 M.entries[#M.entries].run = function(window, pane)
-  local choices = {}
-  for i, e in ipairs(M.entries) do
-    choices[i] = { id = tostring(i), label = string.format('%-14s %s', e.mods .. '+' .. e.key, e.label) }
-  end
   window:perform_action(wezterm.action.InputSelector {
     title = 'WezTerm 快捷键帮助',
     fuzzy = true,
-    choices = choices,
+    choices = M.help_choices(M.entries),
     action = wezterm.action_callback(function(win, p, id)
-      local e = M.entries[tonumber(id)]
-      if e and e.run then e.run(win, p) end
+      M.dispatch(M.entries, id, win, p)
     end),
   }, pane)
 end

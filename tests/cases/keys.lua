@@ -1,3 +1,4 @@
+local wezterm = require 'wezterm'
 local keys = require 'modules.keys'
 
 return {
@@ -85,6 +86,70 @@ return {
       for _, e in ipairs(keys.entries) do if e.key == '?' and e.mods == 'CTRL|SHIFT' then return true end end
       return false
     end)())
+
+    -- 帮助浮层的 run 必须被真正执行：以前整个 suite 不碰它，删掉函数体也能全绿。
+    local help = nil
+    for _, e in ipairs(keys.entries) do
+      if e.key == '?' and e.mods == 'CTRL|SHIFT' then help = e end
+    end
+    check('help entry has run fn', help ~= nil and type(help.run) == 'function')
+
+    local win = { performed = {} }
+    function win:perform_action(action, p) self.performed[#self.performed + 1] = { action = action, pane = p } end
+    local pane = { tag = 'help-pane' }
+    local ok_help, err_help = pcall(function()
+      if help and type(help.run) == 'function' then help.run(win, pane) end
+    end)
+    check('help run executes without error', ok_help, err_help)
+    check('help run performs exactly one action', #win.performed == 1)
+    local isel = win.performed[1] and win.performed[1].action.InputSelector
+    check('help run opens an InputSelector on the given pane', isel ~= nil and win.performed[1].pane == pane)
+    check('help selector title and fuzzy', isel ~= nil and isel.title == 'WezTerm 快捷键帮助' and isel.fuzzy == true)
+    check('help selector has one choice per entry', isel ~= nil and #isel.choices == #keys.entries)
+    check('help selector labels correspond to entries', (function()
+      if not isel or #isel.choices ~= #keys.entries then return false end
+      for i, e in ipairs(keys.entries) do
+        local c = isel.choices[i]
+        if not c or c.id ~= tostring(i) then return false end
+        if not c.label:find(e.mods .. '+' .. e.key, 1, true) then return false end
+        if not c.label:find(e.label, 1, true) then return false end
+      end
+      return true
+    end)())
+
+    -- id → entry 的分发是独立 helper；用桩 entries 证明“选中哪个就执行哪个”。
+    check('dispatch helper is exported', type(keys.dispatch) == 'function')
+    if type(keys.dispatch) == 'function' then
+      local calls = {}
+      local stub = {
+        { key = 'X', mods = 'CTRL', label = 'stub one', run = function(w, p) calls[#calls + 1] = { w = w, p = p, which = 1 } end },
+        { key = 'Y', mods = 'CTRL', label = 'stub two', run = function(w, p) calls[#calls + 1] = { w = w, p = p, which = 2 } end },
+      }
+      keys.dispatch(stub, '2', win, pane)
+      check('dispatch calls the chosen entry run', #calls == 1 and calls[1].which == 2)
+      check('dispatch passes window and pane', calls[1] ~= nil and calls[1].w == win and calls[1].p == pane)
+      keys.dispatch(stub, '99', win, pane)
+      check('dispatch ignores unknown id', #calls == 1)
+      keys.dispatch(stub, '1', win, pane)
+      check('dispatch resolves each id by position', #calls == 2 and calls[2].which == 1)
+    end
+
+    -- 帮助浮层的 action_callback 必须走 dispatch helper（替换 helper 验证接线）。
+    local real_action_cb = wezterm.action_callback
+    local real_dispatch = keys.dispatch
+    local captured_cb, delegated = nil, {}
+    local ok_wire, err_wire = pcall(function()
+      wezterm.action_callback = function(fn) captured_cb = fn; return real_action_cb(fn) end
+      keys.dispatch = function(entries, id, w, p) delegated[#delegated + 1] = { entries = entries, id = id, w = w, p = p } end
+      if help and type(help.run) == 'function' then help.run(win, pane) end
+      check('help registers an action callback', type(captured_cb) == 'function')
+      if type(captured_cb) == 'function' then captured_cb(win, pane, '7') end
+      check('help callback delegates chosen id to dispatch', #delegated == 1 and delegated[1].id == '7'
+        and delegated[1].entries == keys.entries and delegated[1].w == win and delegated[1].p == pane)
+    end)
+    wezterm.action_callback = real_action_cb
+    keys.dispatch = real_dispatch
+    if not ok_wire then error(err_wire) end
 
     local mb = keys.mouse_bindings()
     check('mouse_bindings non-empty', type(mb) == 'table' and #mb >= 1)
