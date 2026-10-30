@@ -106,6 +106,9 @@ end
 
 function M.apply_initial(config, s, dir)
   dir = dir or wezterm.config_dir
+  -- 把 colors/ 注册成 WezTerm 的原生方案目录；这样即使通过 --config-file 指向
+  -- 别处启动，colors/*.toml 也会被原生加载。纯字符串拼接，配置加载期不 yield。
+  config.color_scheme_dirs = { dir .. '/colors' }
   local names = M.builtin_names()
   for _, n in ipairs(names) do
     if n == s.default_scheme then

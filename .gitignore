@@ -1,2 +1,5 @@
+.superpowers/
+tmp/
+tests/.tmp-colors/
 tests/last-run.txt
 *.tmp

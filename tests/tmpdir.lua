@@ -30,6 +30,15 @@ function M.cleanup()
   shell('rmdir /S /Q "' .. win(M.root) .. '" 2>nul')
 end
 
+-- finally 式用法：fn 正常返回或抛错，结束后都立刻删掉临时目录，
+-- 不再依赖每个用例自己记得调用 cleanup。
+function M.with(fn)
+  M.reset()
+  local ok, err = pcall(fn)
+  M.cleanup()
+  if not ok then error(err) end
+end
+
 -- 文件名 "Fancy File" 与 [metadata] name "Fancy Name" 不同，用于验证方案名以
 -- metadata 为准；colors 部分与 colors/example.toml 同构。
 M.metadata_toml = [[
