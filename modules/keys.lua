@@ -11,6 +11,8 @@ local function do_action(tbl)
   end
 end
 
+-- 大写字母键在 20240203 会归一化：SHIFT 隐含在字符里，show-keys 把它显示成
+-- CTRL S，但实际匹配的仍是 Ctrl+Shift+S（见 WezTerm 20201031 发行说明）。
 M.entries = {
   { key = 'T', mods = 'CTRL|SHIFT', label = '新建标签页', run = do_action(wezterm.action.SpawnTab 'CurrentPaneDomain') },
   { key = 'S', mods = 'CTRL|SHIFT', label = '新建标签页并选择 shell', run = shells.picker_action(settings) },
