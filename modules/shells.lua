@@ -30,8 +30,19 @@ function M.exists(prog)
   return false
 end
 
+-- 首选：settings.default_shell 指向的 shell（仅当 key 非空且在 shells 中有定义、prog 可用）
+local function preferred(s, exists_fn)
+  local key = s.default_shell
+  if type(key) ~= 'string' or key == '' then return nil end
+  local sh = s.shells[key]
+  if sh and exists_fn(sh.prog) then return sh end
+  return nil
+end
+
 function M.default_prog(s, exists_fn)
   exists_fn = exists_fn or M.exists
+  local pref = preferred(s, exists_fn)
+  if pref then return prog_with_args(pref) end
   for _, key in ipairs(s.shells_order) do
     local sh = s.shells[key]
     if sh and exists_fn(sh.prog) then
