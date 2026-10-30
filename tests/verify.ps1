@@ -49,5 +49,28 @@ if ($loadBad.Count -gt 0) {
   exit 1
 }
 
+# Key-table gate: prove the real entrypoint's key bindings reached the effective key
+# table. A config that raises at load time makes the CLI fall back to the defaults
+# silently: no stderr text and exit code 0, so the ls-fonts gate above cannot see it
+# (e.g. key='Left' instead of 'LeftArrow' broke every binding while all tests stayed
+# green). Custom bindings are action_callback actions and render as EmitEvent(...) in
+# show-keys, so their presence proves the keys module ran and was accepted.
+$keyText = ''
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+try {
+  $keyText = (& $wez --config-file $entry show-keys 2>&1 | Out-String)
+} finally {
+  $ErrorActionPreference = $prevEap
+}
+$missing = @()
+if ($keyText -notmatch 'ALT\s+LeftArrow\s+->\s+EmitEvent') { $missing += 'ALT LeftArrow' }
+if ($keyText -notmatch 'SHIFT \| CTRL\s+\?\s+->\s+EmitEvent') { $missing += 'SHIFT|CTRL ?' }
+if ($missing.Count -gt 0) {
+  Write-Host ('show-keys is missing custom bindings: ' + ($missing -join ', '))
+  Write-Error 'real entrypoint keys not applied (show-keys shows defaults)'
+  exit 1
+}
+
 Write-Host 'ALL PASS'
 exit 0
