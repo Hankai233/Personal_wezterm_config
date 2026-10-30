@@ -16,10 +16,16 @@ return {
       check('entry has run fn ' .. id, type(e.run) == 'function')
     end
 
-    for _, b in ipairs(built) do
-      check('binding action wrapped', type(b.action) == 'table' and type(b.action.callback) == 'function')
-      check('binding has key', type(b.key) == 'string' and #b.key > 0)
-      check('binding has mods', type(b.mods) == 'string' and #b.mods > 0)
+    -- Per-index identity, not just shape: a build that wired every binding to
+    -- entries[1].run (or shifted the mapping by one) must fail here. Names carry
+    -- the index and the entry id so no two checks collide in the summary.
+    for i, e in ipairs(keys.entries) do
+      local id = string.format('binding[%d] %s', i, e.mods .. '|' .. e.key)
+      local b = built[i] or {}
+      local action_cb = type(b.action) == 'table' and b.action.callback or nil
+      check(id .. ' action carries that entry run', action_cb == e.run)
+      check(id .. ' key copied from entry', b.key == e.key)
+      check(id .. ' mods copied from entry', b.mods == e.mods)
     end
 
     check('entries contain shell menu', (function()
