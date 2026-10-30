@@ -33,6 +33,11 @@ if ($fails.Count -gt 0) { Write-Error ("failed assertions: " + $fails.Count); ex
 # the subcommand's exit code is meaningless here; the captured text is what we assert.
 # Any module calling the async wezterm.glob during config load shows up as
 # 'attempt to yield across a C-call boundary', so this gate also pins that.
+# A failed load (root-config syntax error, appearance/colors/module error) falls back
+# to the defaults and prints no 'Primary font:' section at all, so require that success
+# marker too; and any 'ERROR' log line from the load is a failure. Matching ERROR
+# case-sensitively as a whole word keeps a font path containing 'error' from tripping
+# the gate, while the runtime-error pattern above stays case-insensitive.
 $entry = Join-Path $root 'wezterm.lua'
 $loadText = ''
 $prevEap = $ErrorActionPreference
@@ -42,9 +47,16 @@ try {
 } finally {
   $ErrorActionPreference = $prevEap
 }
-$loadBad = @($loadText -split "`r?`n" | Where-Object { $_ -match 'runtime error|attempt to yield' })
+$loadLines = @($loadText -split "`r?`n")
+$loadBad = @($loadLines | Where-Object { ($_ -cmatch '\bERROR\b') -or ($_ -match 'runtime error|attempt to yield') })
 if ($loadBad.Count -gt 0) {
   $loadBad | ForEach-Object { Write-Host $_ }
+  Write-Error 'real entrypoint wezterm.lua failed to load'
+  exit 1
+}
+$fontLines = @($loadLines | Where-Object { $_ -match '^Primary font:' })
+if ($fontLines.Count -eq 0) {
+  Write-Host 'ls-fonts printed no "Primary font:" success marker (config load failed or produced no output)'
   Write-Error 'real entrypoint wezterm.lua failed to load'
   exit 1
 }
