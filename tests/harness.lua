@@ -18,7 +18,7 @@ local function check(name, ok, detail)
   end
 end
 
-local cases = { 'settings' }
+local cases = { 'settings', 'appearance' }
 for _, c in ipairs(cases) do
   local ok, mod = pcall(require, 'tests.cases.' .. c)
   if not ok then
