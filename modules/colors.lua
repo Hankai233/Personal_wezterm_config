@@ -43,6 +43,16 @@ function M.push_recent(name)
   g.recent_schemes = list
 end
 
+-- 数组或映射统一成 {name = true}：builtin 可传字符串数组（builtin_names 的返回值）
+local function to_map(x)
+  local m = {}
+  if type(x) ~= 'table' then return m end
+  for k, v in pairs(x) do
+    if type(k) == 'number' then m[v] = true else m[k] = true end
+  end
+  return m
+end
+
 -- 返回 [{name, group}]：recent > custom > builtin，同名片后者覆盖前者
 function M.merge(builtin, custom, recent)
   local out, seen = {}, {}
@@ -54,15 +64,20 @@ function M.merge(builtin, custom, recent)
     end
   end
 
-  for _, n in ipairs(custom or {}) do
+  local custom_map = to_map(custom)
+  local custom_list = {}
+  for n in pairs(custom_map) do custom_list[#custom_list + 1] = n end
+  table.sort(custom_list)
+  for _, n in ipairs(custom_list) do
     if not seen[n] then
       seen[n] = true
       out[#out + 1] = { name = n, group = 'custom' }
     end
   end
 
+  local builtin_map = to_map(builtin)
   local bnames = {}
-  for n in pairs(builtin or {}) do bnames[#bnames + 1] = n end
+  for n in pairs(builtin_map) do bnames[#bnames + 1] = n end
   table.sort(bnames)
   for _, n in ipairs(bnames) do
     if not seen[n] then
@@ -85,10 +100,32 @@ function M.apply_initial(config, s)
   wezterm.log_warn('wezterm-config: 配色 "' .. tostring(s.default_scheme) .. '" 不存在，使用 WezTerm 默认配色')
 end
 
--- Task 6 实现真实菜单
+-- 菜单动作：按下键时才枚举配色（glob 在这时是安全的）
 function M.picker_action(s)
   return function(window, pane)
-    wezterm.log_warn('wezterm-config: 配色菜单尚未实现')
+    local custom_dir = wezterm.config_dir .. '/colors'
+    local merged = M.merge(M.builtin_names(), M.list_custom(custom_dir), M.recent_names())
+
+    local choices = {}
+    for i, item in ipairs(merged) do
+      local tag = item.group == 'recent' and '[最近] ' or (item.group == 'custom' and '[自定义] ' or '')
+      choices[i] = { id = tostring(i), label = tag .. item.name }
+    end
+
+    window:perform_action(wezterm.action.InputSelector {
+      title = '切换配色方案（输入可过滤）',
+      fuzzy = true,
+      choices = choices,
+      action = wezterm.action_callback(function(win, p, id)
+        local item = merged[tonumber(id)]
+        if not item then return end
+        -- 读-合并-写，避免冲掉字体缩放等其他 overrides
+        local overrides = win:get_config_overrides() or {}
+        overrides.color_scheme = item.name
+        win:set_config_overrides(overrides)
+        M.push_recent(item.name)
+      end),
+    }, pane)
   end
 end
 
