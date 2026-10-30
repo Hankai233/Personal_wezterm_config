@@ -7,7 +7,13 @@ if (-not (Test-Path $wez)) { Write-Error "wezterm not found"; exit 1 }
 $out = Join-Path $env:TEMP ('wezterm-tests-' + [guid]::NewGuid().ToString('N') + '.txt')
 $env:WEZTERM_CONFIG_HOME = $root
 $env:WEZTEST_OUT = $out
+# wezterm writes log_warn to stderr; with $ErrorActionPreference='Stop' PowerShell 5.1
+# turns native stderr into a terminating NativeCommandError even when redirected to $null.
+# Relax it only around the native call: log lines must not affect assertions.
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
 & $wez --config-file (Join-Path $root 'tests\harness.lua') show-keys *> $null
+$ErrorActionPreference = $prevEap
 
 # wezterm 的 CLI 可能很快返回；等结果文件落盘（最多 10 秒）
 $deadline = (Get-Date).AddSeconds(10)
