@@ -1,9 +1,16 @@
+local wezterm = require 'wezterm'
 local colors = require 'modules.colors'
 local s = require 'modules.settings'
+local tmp = require 'tests.tmpdir'
 
 local function has_name(list, name)
   for _, x in ipairs(list) do if x.name == name then return x end end
   return nil
+end
+
+local function has_value(list, value)
+  for _, x in ipairs(list) do if x == value then return true end end
+  return false
 end
 
 return {
@@ -56,6 +63,53 @@ return {
     local custom_dir = os.getenv('WEZTERM_CONFIG_HOME') .. '/colors'
     local listed = colors.list_custom(custom_dir)
     check('list_custom finds example', (function() for _, n in ipairs(listed) do if n == 'example' then return true end end return false end)())
+
+    -- Fix A：WezTerm 用 TOML 的 [metadata] name 当方案名；文件名不同的文件必须
+    -- 以 metadata 名出现在列表里，两个文件撞同一个 metadata 名只出现一次。
+    tmp.reset()
+    local ok_a, err_a = pcall(function()
+      check('wrote metadata scheme', tmp.write('Fancy File.toml', tmp.metadata_toml))
+      check('wrote plain scheme', tmp.write('plain-theme.toml', tmp.plain_toml))
+      check('wrote second metadata scheme',
+        tmp.write('Another File.toml', tmp.metadata_toml))
+
+      local listed_tmp = colors.list_custom(tmp.colors_dir)
+      check('list_custom lists metadata name', has_value(listed_tmp, 'Fancy Name'))
+      check('list_custom lists plain filename stem', has_value(listed_tmp, 'plain-theme'))
+      check('list_custom hides metadata file stem', not has_value(listed_tmp, 'Fancy File'))
+      check('list_custom dedupes by metadata name', #listed_tmp == 2
+        and listed_tmp[1] == 'Fancy Name' and listed_tmp[2] == 'plain-theme')
+    end)
+    tmp.cleanup()
+    if not ok_a then error(err_a) end
+
+    -- Fix B：default_scheme 也可以指向 colors/<name>.toml；metadata 改名时写入真实名。
+    tmp.reset()
+    local ok_b, err_b = pcall(function()
+      tmp.write('Fancy File.toml', tmp.metadata_toml)
+      tmp.write('plain-theme.toml', tmp.plain_toml)
+
+      local custom_cfg = {}
+      colors.apply_initial(custom_cfg, { default_scheme = 'plain-theme' }, tmp.root)
+      check('apply_initial accepts custom scheme file', custom_cfg.color_scheme == 'plain-theme')
+
+      local renamed_cfg = {}
+      colors.apply_initial(renamed_cfg, { default_scheme = 'Fancy File' }, tmp.root)
+      check('apply_initial uses metadata scheme name', renamed_cfg.color_scheme == 'Fancy Name')
+
+      local warnings = {}
+      local orig_warn = wezterm.log_warn
+      wezterm.log_warn = function(msg) warnings[#warnings + 1] = msg end
+      local unknown_cfg = {}
+      local ok_unknown, err_unknown = pcall(colors.apply_initial, unknown_cfg,
+        { default_scheme = 'No Such Scheme xyz' }, tmp.root)
+      wezterm.log_warn = orig_warn
+      check('apply_initial survives unknown default with dir', ok_unknown, err_unknown)
+      check('apply_initial leaves config untouched for unknown custom', unknown_cfg.color_scheme == nil)
+      check('apply_initial warns once for unknown custom', #warnings == 1)
+    end)
+    tmp.cleanup()
+    if not ok_b then error(err_b) end
 
     -- apply_initial 是 init.lua 里唯一与运行时配置交互的入口，必须真的写进 config
     local cfg = {}

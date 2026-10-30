@@ -2,6 +2,7 @@ local wezterm = require 'wezterm'
 local shells = require 'modules.shells'
 local colors = require 'modules.colors'
 local s = require 'modules.settings'
+local tmp = require 'tests.tmpdir'
 
 -- 假 window：记录 perform_action 的动作与 pane，并模拟 config overrides 读写。
 -- 真 WezTerm 的 get_config_overrides 每次返回新表（nil 时返回 nil），不会把内部
@@ -219,6 +220,48 @@ return {
     colors.builtin_names = orig_builtin
     colors.list_custom = orig_custom
     if not ok then error(err) end
+
+    -- ---------- colors.picker_action：metadata 方案名作为 override ----------
+    -- 用真实 list_custom 读临时 colors/ 目录，证明选择器写回的是 WezTerm 认可的
+    -- [metadata] name，而不是文件名。
+    local orig_config_dir = wezterm.config_dir
+    local orig_global3 = wezterm.GLOBAL
+    local orig_builtin3 = colors.builtin_names
+
+    tmp.reset()
+    local ok_meta, err_meta = pcall(function()
+      check('metadata fixture written', tmp.write('Fancy File.toml', tmp.metadata_toml))
+      wezterm.config_dir = tmp.root
+      wezterm.GLOBAL = {}
+      colors.builtin_names = function() return { 'Nord' } end
+
+      local mwin, mpane = make_window_and_pane()
+      local meta_cb = with_captured_callback(function()
+        colors.picker_action(s)(mwin, mpane)
+      end)
+
+      local mis = mwin.performed[1] and mwin.performed[1].action.InputSelector
+      local meta_id
+      if mis then
+        for _, c in ipairs(mis.choices) do
+          if c.label == '[自定义] Fancy Name' then meta_id = c.id end
+        end
+      end
+      check('color picker lists metadata scheme name', meta_id ~= nil)
+
+      if type(meta_cb) == 'function' and meta_id then
+        local ok_cb = pcall(meta_cb, mwin, mpane, meta_id)
+        check('color picker callback with metadata id runs', ok_cb)
+        check('color picker override uses metadata name',
+          mwin.set_calls[1] ~= nil and mwin.set_calls[1].color_scheme == 'Fancy Name')
+      end
+    end)
+
+    tmp.cleanup()
+    wezterm.config_dir = orig_config_dir
+    wezterm.GLOBAL = orig_global3
+    colors.builtin_names = orig_builtin3
+    if not ok_meta then error(err_meta) end
 
     -- ---------- colors.picker_action: 空菜单 ----------
     local orig_global2 = wezterm.GLOBAL

@@ -16,11 +16,26 @@ function M.builtin_names()
   return names
 end
 
+-- 方案名由 WezTerm 决定：TOML 里有 [metadata] name 就用它，否则才用文件名。
+-- 所以不能直接拿文件名当方案名，否则带 metadata 的文件选中后会“找不到方案”。
+-- list_custom 只在选择器的按键路径上调用；这里的 load_scheme 是同步读文件，
+-- 不受配置加载期“不能 yield”的限制。
 function M.list_custom(dir)
   local ok, files = pcall(function() return wezterm.glob(dir .. '/*.toml') end)
   if not ok or type(files) ~= 'table' then return {} end
-  local names = {}
-  for _, f in ipairs(files) do names[#names + 1] = name_of(f) end
+  local names, seen = {}, {}
+  for _, f in ipairs(files) do
+    local name = name_of(f)
+    -- load_scheme 返回 (颜色表, metadata)；第二项里的 name 就是 WezTerm 用的方案名。
+    local ok_load, _, meta = pcall(wezterm.color.load_scheme, f)
+    if ok_load and type(meta) == 'table' and type(meta.name) == 'string' and meta.name ~= '' then
+      name = meta.name
+    end
+    if not seen[name] then
+      seen[name] = true
+      names[#names + 1] = name
+    end
+  end
   table.sort(names)
   return names
 end
@@ -89,13 +104,25 @@ function M.merge(builtin, custom, recent)
   return out
 end
 
-function M.apply_initial(config, s)
+function M.apply_initial(config, s, dir)
+  dir = dir or wezterm.config_dir
   local names = M.builtin_names()
   for _, n in ipairs(names) do
     if n == s.default_scheme then
       config.color_scheme = n
       return
     end
+  end
+  -- 也接受 colors/<name>.toml 里的自定义方案。这里是配置加载阶段：只读单个文件，
+  -- 不能用 wezterm.glob（会让配置加载报 yield across C-call boundary）。
+  local ok, _, meta = pcall(wezterm.color.load_scheme, dir .. '/colors/' .. tostring(s.default_scheme) .. '.toml')
+  if ok then
+    if type(meta) == 'table' and type(meta.name) == 'string' and meta.name ~= '' then
+      config.color_scheme = meta.name -- TOML metadata 名才是 WezTerm 认的方案名
+    else
+      config.color_scheme = s.default_scheme
+    end
+    return
   end
   wezterm.log_warn('wezterm-config: 配色 "' .. tostring(s.default_scheme) .. '" 不存在，使用 WezTerm 默认配色')
 end
