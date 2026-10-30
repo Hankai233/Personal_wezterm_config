@@ -80,5 +80,8 @@ return {
 
     check('exists finds pwsh on PATH', shells.exists('pwsh.exe') == true)
     check('exists rejects absent exe', shells.exists('no-such-exe-xyz.exe') == false)
+    -- 同步实现的回归点：绝对路径与 PATH 裸名都必须走 io.open，不能走异步的 glob
+    check('exists finds absolute path', shells.exists('C:/Program Files/WezTerm/wezterm.exe') == true)
+    check('exists rejects absent bare name', shells.exists('definitely-not-a-real-program-xyz.exe') == false)
   end,
 }

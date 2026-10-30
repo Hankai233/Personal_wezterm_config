@@ -15,7 +15,7 @@ $ErrorActionPreference = 'Continue'
 & $wez --config-file (Join-Path $root 'tests\harness.lua') show-keys *> $null
 $ErrorActionPreference = $prevEap
 
-# wezterm 的 CLI 可能很快返回；等结果文件落盘（最多 10 秒）
+# The wezterm CLI may return before the config finishes; wait for the results file (max 10s)
 $deadline = (Get-Date).AddSeconds(10)
 while (-not (Test-Path $out) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 200 }
 
@@ -26,5 +26,28 @@ $summary = $lines | Where-Object { $_ -like 'SUMMARY*' }
 if (-not $summary) { Write-Error 'no SUMMARY line'; exit 1 }
 $fails = @($lines | Where-Object { $_ -like 'FAIL*' })
 if ($fails.Count -gt 0) { Write-Error ("failed assertions: " + $fails.Count); exit 1 }
+
+# Real-entrypoint gate: the suite above loads tests/harness.lua, which is a different
+# entrypoint from the shipped wezterm.lua -> require 'init'. Assert the real entrypoint
+# loads cleanly too. wezterm prints config-load errors to stderr but still exits 0, so
+# the subcommand's exit code is meaningless here; the captured text is what we assert.
+# Any module calling the async wezterm.glob during config load shows up as
+# 'attempt to yield across a C-call boundary', so this gate also pins that.
+$entry = Join-Path $root 'wezterm.lua'
+$loadText = ''
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+try {
+  $loadText = (& $wez --config-file $entry ls-fonts 2>&1 | Out-String)
+} finally {
+  $ErrorActionPreference = $prevEap
+}
+$loadBad = @($loadText -split "`r?`n" | Where-Object { $_ -match 'runtime error|attempt to yield' })
+if ($loadBad.Count -gt 0) {
+  $loadBad | ForEach-Object { Write-Host $_ }
+  Write-Error 'real entrypoint wezterm.lua failed to load'
+  exit 1
+}
+
 Write-Host 'ALL PASS'
 exit 0
