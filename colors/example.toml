@@ -1,4 +1,6 @@
-# 自定义配色模板：复制本文件，重载后出现在 Ctrl+Shift+A 列表，选中后生效。
+# 自定义配色模板：复制本文件到 colors/，重载配置后出现在 Ctrl+Shift+A 列表，选中后生效。
+# modules/colors.lua 会把 colors/ 注册进 config.color_scheme_dirs，因此即使通过
+# --config-file 从默认配置目录之外启动，这里也会被 WezTerm 原生加载。
 # 内置方案已有 1000+ 套，Ctrl+Shift+A 菜单里直接选；只有想覆盖/新增时才用本目录。
 # 方案名优先取 [metadata] name，没有时才用文件名（不含 .toml）。
 # 与内置方案同名时会覆盖内置方案（WezTerm 文档行为，未在命令行单独实测）。

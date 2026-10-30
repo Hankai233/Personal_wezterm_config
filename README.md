@@ -40,11 +40,12 @@
 ## 外观
 
 - 字体 `Maple Mono NF CN`，11pt，行高 1.0，`harfbuzz_features = { 'calt', 'liga' }`。配置只显式指定这一个家族（自带 CJK 与 Nerd 图标）；缺字由 WezTerm 内置回退（`JetBrains Mono` / `Noto Color Emoji` / `Symbols Nerd Font Mono` 等）补齐，`ls-fonts` 里能看到。
-- 窗口内边距 4、scrollback 10000 行、`copy_on_select` 开启，同样在 `modules/settings.lua`。
+- 窗口内边距 4、scrollback 10000 行由 `modules/settings.lua` 驱动，并在 `modules/appearance.lua` 里落到 `config`。`copy_on_select` 不是 WezTerm 20240203 的配置项（写进 `config` 会让整份配置加载失败并静默回退默认值），选中即复制是该版本默认的鼠标行为，所以不再暴露这个死开关。
 
 ## 自定义配色
 
 - `colors/*.toml` 由 WezTerm 原生加载：TOML 里有 `[metadata] name` 时用它作方案名，没有时才用文件名（去掉 `.toml`）。`Ctrl+Shift+A` 列表显示的名字与 WezTerm 实际加载的方案名一致，否则选中后会报 “scheme not found”。`colors/example.toml` 没有 metadata，所以它会以 `example` 这个名字出现在列表里。
+- `modules/colors.lua` 在配置加载时把 `<配置目录>/colors` 写进 `config.color_scheme_dirs`；即使通过 `--config-file` 从默认配置目录之外启动，这些自定义方案也会注册进 WezTerm（原生 TOML 加载，不靠本仓库扫描文件）。
 - 与内置方案同名时会覆盖内置方案（这是 WezTerm 文档行为，本仓库未在命令行里单独实测）。
 - `Ctrl+Shift+A` 打开选择器，输入可模糊过滤；列表顺序 `[最近]`（最多 5 条，跨配置重载保留）→ `[自定义]` → 内置（按名称排序）。
 - 选中后通过 `set_config_overrides` 只改当前窗口的配色，不写盘，也不冲掉其他 override；重启回到 `modules/settings.lua` 的 `default_scheme`（默认 `Catppuccin Mocha`）。
@@ -75,17 +76,17 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\verify.ps1
 - 用真实 `wezterm` 二进制跑（优先 `PATH` 里的 `wezterm`，否则 `C:\Program Files\WezTerm\wezterm.exe`）。
 - 先加载 `tests/harness.lua` 跑 `tests/cases/*.lua`（settings / appearance / shells / colors / keys / pickers），输出 `SUMMARY pass=… fail=…`；有 `FAIL` 即退出码 1。
 - 再对真实入口 `wezterm.lua` 做两道门禁：`ls-fonts` 必须打出 `Primary font:` 且没有 `ERROR` / `runtime error`（证明配置真的加载成功，而不是静默回退默认值）；`show-keys` 必须含 `ALT LeftArrow` 与 `SHIFT | CTRL ?` 的 `EmitEvent`（证明自定义键表生效）。
-- 全绿输出 `ALL PASS`（当前 211 条断言）。
+- 全绿输出 `ALL PASS`（当前 232 条断言）。
 
 ## 部署
 
 把本仓库内容复制到 WezTerm 配置目录（排除 `.git`、`.superpowers`、`tests/last-run.txt`）：
 
 ```powershell
-robocopy E:\Documents\deepseek-harness\default-workspace\wezterm-config C:\Users\Hanka\.config\wezterm /E /XD .git .superpowers /XF last-run.txt
+robocopy E:\Documents\deepseek-harness\default-workspace\wezterm-config C:\Users\Hanka\.config\wezterm /MIR /XD .git .superpowers /XF last-run.txt /R:0 /W:0
 ```
 
-复制后在 WezTerm 里 `Ctrl+Shift+R` 重载或重启。`robocopy` 默认每 30 秒重试、最多百万次，脚本化调用建议加 `/R:0 /W:0` 让它快速失败。
+`/MIR` 是镜像模式：除了把源目录复制过去，还会**删除目标目录里源目录已经没有的文件**（例如已删掉的旧模块或配色），避免残留文件继续生效；`/XD` 排除的 `.git`、`.superpowers` 不受影响。`/R:0 /W:0` 关闭 robocopy 默认的 30 秒重试（默认最多一百万次），脚本化调用会快速失败而不是卡住。复制后在 WezTerm 里按 `Ctrl+Shift+R` 重载或重启。
 
 部署后可用真实二进制确认（`--config-file` 明确指向部署路径，不受正在运行的实例影响）：
 
