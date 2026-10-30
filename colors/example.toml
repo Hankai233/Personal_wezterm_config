@@ -1,6 +1,7 @@
-# 自定义配色模板：复制本文件改名（文件名即方案名，不含 .toml），重启或重载即生效。
+# 自定义配色模板：复制本文件，重载后出现在 Ctrl+Shift+A 列表，选中后生效。
 # 内置方案已有 1000+ 套，Ctrl+Shift+A 菜单里直接选；只有想覆盖/新增时才用本目录。
-# 同名文件会覆盖内置同名方案。
+# 方案名优先取 [metadata] name，没有时才用文件名（不含 .toml）。
+# 与内置方案同名时会覆盖内置方案（WezTerm 文档行为，未在命令行单独实测）。
 # ANI 16 色顺序：black red green yellow blue magenta cyan white
 # 也可参考 wezterm.color.load_base16_scheme / load_terminal_sexy_scheme 的格式，自行转换后填色。
 

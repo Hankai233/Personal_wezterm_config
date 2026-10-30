@@ -33,19 +33,23 @@
 | 快捷键帮助（选中即执行） | `Ctrl+Shift+?` |
 | 粘贴 | 鼠标右键单击 |
 
-`show-keys` 会把大写字母键显示成 `CTRL S`、`CTRL A` 这类省略 SHIFT 的形式，实际匹配的仍是 `Ctrl+Shift+S` / `Ctrl+Shift+A`（20240203 对字符键做了 SHIFT 归一化）。
+`show-keys` 会把大写 ASCII 字母键显示成 `CTRL S`、`CTRL A` 这类省略 SHIFT 的形式（只有大写字母会折叠 SHIFT），实际匹配的仍是 `Ctrl+Shift+S` / `Ctrl+Shift+A`；`?` 这类标点保留 SHIFT，显示成 `SHIFT | CTRL ?`。另外 `\` / `-` / `?` 还同时注册了 shifted 字符（`|` / `_` / `/`）的拼写，Ctrl+Shift 下无论事件按哪种字符投递都能命中。
+
+加自定义键：在 `modules/keys.lua` 的 `M.entries` 里加一条 `{ key, mods, label, run }`，`Ctrl+Shift+?` 帮助浮层会自动收录并执行它。
 
 ## 外观
 
-- 字体 `Maple Mono NF CN`，11pt，行高 1.0，`harfbuzz_features = { 'calt', 'liga' }`。配置只显式指定这一个家族（自带 CJK 与 Nerd 图标）；缺字由 WezTerm 内置回退（`JetBrains Mono` / `Noto Color Emoji`）补齐，`ls-fonts` 里能看到。
+- 字体 `Maple Mono NF CN`，11pt，行高 1.0，`harfbuzz_features = { 'calt', 'liga' }`。配置只显式指定这一个家族（自带 CJK 与 Nerd 图标）；缺字由 WezTerm 内置回退（`JetBrains Mono` / `Noto Color Emoji` / `Symbols Nerd Font Mono` 等）补齐，`ls-fonts` 里能看到。
 - 窗口内边距 4、scrollback 10000 行、`copy_on_select` 开启，同样在 `modules/settings.lua`。
 
 ## 自定义配色
 
-- `colors/*.toml` 由 WezTerm 原生加载：文件名（去掉 `.toml`）= 方案名，同名覆盖内置方案；`colors/example.toml` 是带注释的模板。
+- `colors/*.toml` 由 WezTerm 原生加载：TOML 里有 `[metadata] name` 时用它作方案名，没有时才用文件名（去掉 `.toml`）。`Ctrl+Shift+A` 列表显示的名字与 WezTerm 实际加载的方案名一致，否则选中后会报 “scheme not found”。`colors/example.toml` 没有 metadata，所以它会以 `example` 这个名字出现在列表里。
+- 与内置方案同名时会覆盖内置方案（这是 WezTerm 文档行为，本仓库未在命令行里单独实测）。
 - `Ctrl+Shift+A` 打开选择器，输入可模糊过滤；列表顺序 `[最近]`（最多 5 条，跨配置重载保留）→ `[自定义]` → 内置（按名称排序）。
-- 选中后通过 `set_config_overrides` 只改当前窗口的配色，不写盘，也不冲掉其他 override；重启回到 `modules/settings.lua` 的 `default_scheme`（默认 `Catppuccin Mocha`；不存在时告警并落回 WezTerm 默认配色）。
-- 改 `default_scheme` 或往 `colors/` 放文件后，`Ctrl+Shift+R` 重载生效。
+- 选中后通过 `set_config_overrides` 只改当前窗口的配色，不写盘，也不冲掉其他 override；重启回到 `modules/settings.lua` 的 `default_scheme`（默认 `Catppuccin Mocha`）。
+- `default_scheme` 既可以是内置方案名，也可以是 `colors/<name>.toml` 的文件名；带 `[metadata] name` 的文件会按 metadata 里的真实方案名生效。两者都匹配不到时告警并落回 WezTerm 默认配色。
+- 改 `default_scheme` 或往 `colors/` 放新文件后按 `Ctrl+Shift+R` 重载：列表会刷新，然后选中即生效。
 
 ## 自定义 shell
 
@@ -71,7 +75,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\verify.ps1
 - 用真实 `wezterm` 二进制跑（优先 `PATH` 里的 `wezterm`，否则 `C:\Program Files\WezTerm\wezterm.exe`）。
 - 先加载 `tests/harness.lua` 跑 `tests/cases/*.lua`（settings / appearance / shells / colors / keys / pickers），输出 `SUMMARY pass=… fail=…`；有 `FAIL` 即退出码 1。
 - 再对真实入口 `wezterm.lua` 做两道门禁：`ls-fonts` 必须打出 `Primary font:` 且没有 `ERROR` / `runtime error`（证明配置真的加载成功，而不是静默回退默认值）；`show-keys` 必须含 `ALT LeftArrow` 与 `SHIFT | CTRL ?` 的 `EmitEvent`（证明自定义键表生效）。
-- 全绿输出 `ALL PASS`（当前 175 条断言）。
+- 全绿输出 `ALL PASS`（当前 211 条断言）。
 
 ## 部署
 
