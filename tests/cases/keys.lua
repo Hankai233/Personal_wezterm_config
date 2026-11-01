@@ -151,6 +151,77 @@ return {
     keys.dispatch = real_dispatch
     if not ok_wire then error(err_wire) end
 
+    -- 全选：CTRL|SHIFT+A 原本是「切换配色方案」，选择器删除后改成 copy mode 组合。
+    -- 20240203 没有 SelectAll 这个 KeyAssignment，动作必须在加载期就能构造成功，
+    -- 否则整份配置会静默回退默认键表。
+    local select_all = nil
+    for _, e in ipairs(keys.entries) do
+      if e.key == 'A' and e.mods == 'CTRL|SHIFT' then select_all = e end
+    end
+    check('entries contain select-all on CTRL|SHIFT A', select_all ~= nil)
+    check('select-all label is 全选', select_all ~= nil and select_all.label == '全选')
+    check('entries have no color-picker label', (function()
+      for _, e in ipairs(keys.entries) do
+        if e.label == '切换配色方案' then return false end
+      end
+      return true
+    end)())
+
+    local exported = keys.select_all_action
+    local exported_list = type(exported) == 'table' and exported.Multiple or nil
+    check('select_all_action is exported as Multiple', exported_list ~= nil and #exported_list == 4)
+
+    local sa_pane = { tag = 'select-all-pane' }
+    local sa_win = { performed = {} }
+    function sa_win:perform_action(action, p)
+      self.performed[#self.performed + 1] = { action = action, pane = p }
+    end
+    local ok_sa, err_sa = pcall(function()
+      if select_all and type(select_all.run) == 'function' then select_all.run(sa_win, sa_pane) end
+    end)
+    check('select-all run executes without error', ok_sa, err_sa)
+    check('select-all performs exactly one action', #sa_win.performed == 1)
+    check('select-all passes the given pane', sa_win.performed[1] ~= nil and sa_win.performed[1].pane == sa_pane)
+    local sa_action = sa_win.performed[1] and sa_win.performed[1].action.Multiple
+    check('select-all action is Multiple', sa_action ~= nil)
+    check('select-all Multiple has four steps', sa_action ~= nil and #sa_action == 4)
+    -- unit variant 在 Lua 里序列化成字符串；兼容单键表写法，两种都算命中。
+    check('select-all step 1 activates copy mode', (function()
+      local v = sa_action and sa_action[1]
+      if v == 'ActivateCopyMode' then return true end
+      return type(v) == 'table' and v.ActivateCopyMode ~= nil
+    end)())
+    check('select-all step 2 jumps to scrollback top',
+      sa_action ~= nil and type(sa_action[2]) == 'table' and sa_action[2].CopyMode == 'MoveToScrollbackTop')
+    check('select-all step 3 sets Cell selection mode',
+      sa_action ~= nil and type(sa_action[3]) == 'table'
+        and type(sa_action[3].CopyMode) == 'table' and sa_action[3].CopyMode.SetSelectionMode == 'Cell')
+    check('select-all step 4 jumps to scrollback bottom',
+      sa_action ~= nil and type(sa_action[4]) == 'table' and sa_action[4].CopyMode == 'MoveToScrollbackBottom')
+
+    -- 关闭选中分屏：CTRL|SHIFT+Q，必须带 confirm，避免误关。
+    local close_pane = nil
+    for _, e in ipairs(keys.entries) do
+      if e.key == 'Q' and e.mods == 'CTRL|SHIFT' then close_pane = e end
+    end
+    check('entries contain close-pane on CTRL|SHIFT Q', close_pane ~= nil)
+    check('close-pane label is 关闭分屏', close_pane ~= nil and close_pane.label == '关闭分屏')
+
+    local cp_pane = { tag = 'close-pane-pane' }
+    local cp_win = { performed = {} }
+    function cp_win:perform_action(action, p)
+      self.performed[#self.performed + 1] = { action = action, pane = p }
+    end
+    local ok_cp, err_cp = pcall(function()
+      if close_pane and type(close_pane.run) == 'function' then close_pane.run(cp_win, cp_pane) end
+    end)
+    check('close-pane run executes without error', ok_cp, err_cp)
+    check('close-pane performs exactly one action', #cp_win.performed == 1)
+    check('close-pane passes the given pane', cp_win.performed[1] ~= nil and cp_win.performed[1].pane == cp_pane)
+    local cp_val = cp_win.performed[1] and cp_win.performed[1].action.CloseCurrentPane
+    check('close-pane action is CloseCurrentPane', cp_val ~= nil)
+    check('close-pane requires confirmation', type(cp_val) == 'table' and cp_val.confirm == true)
+
     local mb = keys.mouse_bindings()
     check('mouse_bindings non-empty', type(mb) == 'table' and #mb >= 1)
     check('mouse_bindings right click paste', mb[1].event.Up.button == 'Right')

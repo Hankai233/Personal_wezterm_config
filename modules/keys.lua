@@ -1,7 +1,6 @@
 local wezterm = require 'wezterm'
 local settings = require 'modules.settings'
 local shells = require 'modules.shells'
-local colors = require 'modules.colors'
 
 local M = {}
 
@@ -11,6 +10,16 @@ local function do_action(tbl)
   end
 end
 
+-- 20240203 没有 SelectAll 这个动作，只能用 copy mode 组合模拟“全选整个 scrollback”：
+-- 进入 copy mode、跳到回滚顶部、切到 Cell 选区、再跳到回滚底部。必须一次下发
+-- Multiple，中间用户按键会清掉已有选区，分几条 run 就选不完整。
+M.select_all_action = wezterm.action.Multiple {
+  wezterm.action.ActivateCopyMode,
+  wezterm.action.CopyMode 'MoveToScrollbackTop',
+  wezterm.action.CopyMode { SetSelectionMode = 'Cell' },
+  wezterm.action.CopyMode 'MoveToScrollbackBottom',
+}
+
 -- 大写字母键在 20240203 会归一化：SHIFT 隐含在字符里，show-keys 把它显示成
 -- CTRL S，但实际匹配的仍是 Ctrl+Shift+S（见 WezTerm 20201031 发行说明）。
 -- 带 shift 的符号键（- \ ?）在 US 布局上可能以 shifted 字符（_ | /）投递，
@@ -19,7 +28,8 @@ end
 M.entries = {
   { key = 'T', mods = 'CTRL|SHIFT', label = '新建标签页', run = do_action(wezterm.action.SpawnTab 'CurrentPaneDomain') },
   { key = 'S', mods = 'CTRL|SHIFT', label = '新建标签页并选择 shell', run = shells.picker_action(settings) },
-  { key = 'A', mods = 'CTRL|SHIFT', label = '切换配色方案', run = colors.picker_action(settings) },
+  { key = 'A', mods = 'CTRL|SHIFT', label = '全选', run = do_action(M.select_all_action) },
+  { key = 'Q', mods = 'CTRL|SHIFT', label = '关闭分屏', run = do_action(wezterm.action.CloseCurrentPane { confirm = true }) },
   {
     key = '\\',
     mods = 'CTRL|SHIFT',
