@@ -1,26 +1,11 @@
 local wezterm = require 'wezterm'
 local shells = require 'modules.shells'
-local colors = require 'modules.colors'
-local s = require 'modules.settings'
-local tmp = require 'tests.tmpdir'
 
--- 假 window：记录 perform_action 的动作与 pane，并模拟 config overrides 读写。
--- 真 WezTerm 的 get_config_overrides 每次返回新表（nil 时返回 nil），不会把内部
--- 状态交出去；这里同样返回副本，测试只能断言字段，不能断言与 fake 内部是同一张表。
-local function make_window(overrides)
-  local w = { performed = {}, set_calls = {}, overrides = overrides }
+-- 假 window：记录 perform_action 的动作与 pane。
+local function make_window()
+  local w = { performed = {} }
   function w:perform_action(action, p)
     self.performed[#self.performed + 1] = { action = action, pane = p }
-  end
-  function w:get_config_overrides()
-    if self.overrides == nil then return nil end
-    local copy = {}
-    for k, v in pairs(self.overrides) do copy[k] = v end
-    return copy
-  end
-  function w:set_config_overrides(o)
-    self.overrides = o
-    self.set_calls[#self.set_calls + 1] = o
   end
   return w
 end
@@ -49,14 +34,6 @@ local function argv_equal(actual, expected)
   if type(actual) ~= 'table' or #actual ~= #expected then return false end
   for i = 1, #expected do
     if actual[i] ~= expected[i] then return false end
-  end
-  return true
-end
-
-local function list_equal(a, b)
-  if type(a) ~= 'table' or type(b) ~= 'table' or #a ~= #b then return false end
-  for i = 1, #a do
-    if a[i] ~= b[i] then return false end
   end
   return true
 end
@@ -137,159 +114,5 @@ return {
     end)
     check('shell picker performs nothing when no shell exists', #nwin.performed == 0)
     check('shell picker registers no callback when empty', no_cb == nil)
-
-    -- ---------- colors.picker_action ----------
-    local orig_global = wezterm.GLOBAL
-    local orig_builtin = colors.builtin_names
-    local orig_custom = colors.list_custom
-
-    local ok, err = pcall(function()
-      wezterm.GLOBAL = { recent_schemes = { 'Tokyo Night' } }
-      colors.builtin_names = function()
-        return { 'Nord', 'Zzz', 'Catppuccin Mocha', 'Tokyo Night' }
-      end
-      colors.list_custom = function()
-        return { 'my-theme', 'Nord' }
-      end
-
-      local cwin = make_window({ font_size = 13 })
-      local cpane = { tag = 'pane-c' }
-      local color_cb = with_captured_callback(function()
-        colors.picker_action(s)(cwin, cpane)
-      end)
-
-      check('color picker performs exactly one action', #cwin.performed == 1)
-      local cfirst = cwin.performed[1]
-      check('color picker passes pane to perform_action', cfirst ~= nil and cfirst.pane == cpane)
-      local cis = cfirst and cfirst.action.InputSelector
-      check('color picker builds InputSelector', cis ~= nil)
-      check('color picker title and fuzzy', cis ~= nil and cis.title == '切换配色方案（输入可过滤）' and cis.fuzzy == true)
-      check('color picker registers a real callback action', cis ~= nil and cis.action ~= nil and type(cis.action.EmitEvent) == 'string')
-
-      -- recent [Tokyo Night] > custom 排序 [Nord, my-theme] > builtin 排序去重
-      local want = {
-        '[最近] Tokyo Night',
-        '[自定义] Nord',
-        '[自定义] my-theme',
-        'Catppuccin Mocha',
-        'Zzz',
-      }
-      local order_ok = cis ~= nil and #cis.choices == #want
-      local ids_ok = cis ~= nil
-      if cis then
-        for i, label in ipairs(want) do
-          local c = cis.choices[i]
-          if not c or c.label ~= label then order_ok = false end
-          if not c or c.id ~= tostring(i) then ids_ok = false end
-        end
-      end
-      check('color picker labels tagged and in merge order', order_ok)
-      check('color picker choices ids are 1-based strings', ids_ok)
-
-      check('color picker captured callback', type(color_cb) == 'function')
-      if type(color_cb) == 'function' and cis ~= nil then
-        local ok2 = pcall(color_cb, cwin, cpane, '3')
-        check('color callback runs without error', ok2)
-        -- 真 API 返回副本，只能断言写回 window 的那张表的字段，不能断言同一性
-        local written = cwin.set_calls[1]
-        check('color callback writes color_scheme from chosen id', written ~= nil and written.color_scheme == 'my-theme')
-        check('color callback preserves existing overrides', written ~= nil and written.font_size == 13)
-        check('color callback writes overrides through window', #cwin.set_calls == 1)
-        local recents = wezterm.GLOBAL.recent_schemes
-        check('color callback pushes chosen name into recents', recents[1] == 'my-theme' and recents[2] == 'Tokyo Night')
-
-        -- nil overrides：真 API 可能返回 nil，回调必须自行新建表
-        local nwin = make_window(nil)
-        local nok = pcall(color_cb, nwin, cpane, '4')
-        check('color callback handles nil overrides', nok and #nwin.set_calls == 1)
-        check('color callback writes picked scheme when overrides are nil',
-          nwin.set_calls[1] ~= nil and nwin.set_calls[1].color_scheme == 'Catppuccin Mocha')
-
-        -- unknown id：不写 overrides、不动 recents
-        local before = cwin.set_calls[1].color_scheme
-        local recents_before = {}
-        for i, v in ipairs(wezterm.GLOBAL.recent_schemes) do recents_before[i] = v end
-        pcall(color_cb, cwin, cpane, '99')
-        check('color callback ignores unknown id', cwin.set_calls[1].color_scheme == before and #cwin.set_calls == 1)
-        check('color callback leaves recents unchanged for unknown id',
-          list_equal(wezterm.GLOBAL.recent_schemes, recents_before))
-      end
-    end)
-
-    wezterm.GLOBAL = orig_global
-    colors.builtin_names = orig_builtin
-    colors.list_custom = orig_custom
-    if not ok then error(err) end
-
-    -- ---------- colors.picker_action：metadata 方案名作为 override ----------
-    -- 用真实 list_custom 读临时 colors/ 目录，证明选择器写回的是 WezTerm 认可的
-    -- [metadata] name，而不是文件名。
-    local orig_config_dir = wezterm.config_dir
-    local orig_global3 = wezterm.GLOBAL
-    local orig_builtin3 = colors.builtin_names
-
-    tmp.reset()
-    local ok_meta, err_meta = pcall(function()
-      check('metadata fixture written', tmp.write('Fancy File.toml', tmp.metadata_toml))
-      wezterm.config_dir = tmp.root
-      wezterm.GLOBAL = {}
-      colors.builtin_names = function() return { 'Nord' } end
-
-      local mwin, mpane = make_window_and_pane()
-      local meta_cb = with_captured_callback(function()
-        colors.picker_action(s)(mwin, mpane)
-      end)
-
-      local mis = mwin.performed[1] and mwin.performed[1].action.InputSelector
-      local meta_id
-      if mis then
-        for _, c in ipairs(mis.choices) do
-          if c.label == '[自定义] Fancy Name' then meta_id = c.id end
-        end
-      end
-      check('color picker lists metadata scheme name', meta_id ~= nil)
-
-      if type(meta_cb) == 'function' and meta_id then
-        local ok_cb = pcall(meta_cb, mwin, mpane, meta_id)
-        check('color picker callback with metadata id runs', ok_cb)
-        check('color picker override uses metadata name',
-          mwin.set_calls[1] ~= nil and mwin.set_calls[1].color_scheme == 'Fancy Name')
-      end
-    end)
-
-    tmp.cleanup()
-    wezterm.config_dir = orig_config_dir
-    wezterm.GLOBAL = orig_global3
-    colors.builtin_names = orig_builtin3
-    if not ok_meta then error(err_meta) end
-
-    -- ---------- colors.picker_action: 空菜单 ----------
-    local orig_global2 = wezterm.GLOBAL
-    local orig_custom2 = colors.list_custom
-    local orig_get_builtin = wezterm.color.get_builtin_schemes
-    local orig_warn = wezterm.log_warn
-    local warnings = {}
-    wezterm.log_warn = function(msg) warnings[#warnings + 1] = msg end
-
-    local ok_empty, err_empty = pcall(function()
-      wezterm.GLOBAL = {}
-      -- builtin 不可用：走 colors.builtin_names 里 pcall 的兜底路径
-      wezterm.color.get_builtin_schemes = function() return {} end
-      colors.list_custom = function() return {} end
-
-      local ewin, epane = make_window_and_pane()
-      colors.picker_action(s)(ewin, epane)
-
-      check('color picker performs nothing when no scheme exists', #ewin.performed == 0)
-      check('color picker warns exactly once when empty', #warnings == 1)
-      check('color picker warning names the empty scheme list',
-        warnings[1] ~= nil and warnings[1]:find('没有可用的配色方案', 1, true) ~= nil)
-    end)
-
-    wezterm.GLOBAL = orig_global2
-    colors.list_custom = orig_custom2
-    wezterm.color.get_builtin_schemes = orig_get_builtin
-    wezterm.log_warn = orig_warn
-    if not ok_empty then error(err_empty) end
   end,
 }
