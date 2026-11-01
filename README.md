@@ -11,7 +11,7 @@
 | `modules/settings.lua` | 唯一常量区：字体、字号、shell 列表、默认配色、scrollback、窗口内边距 |
 | `modules/appearance.lua` | 应用字体 / 行高 / `harfbuzz_features` |
 | `modules/shells.lua` | 默认 shell 探测与回退、`Ctrl+Shift+S` 菜单 |
-| `modules/colors.lua` | 初始配色、`colors/` 扫描、`Ctrl+Shift+A` 菜单 |
+| `modules/colors.lua` | 初始配色与 `colors/` 目录注册 |
 | `modules/keys.lua` | 自定义键、鼠标绑定、`Ctrl+Shift+?` 帮助浮层 |
 | `colors/example.toml` | 自定义配色模板（带注释） |
 | `tests/` | `harness.lua` + `cases/*.lua` + `verify.ps1` |
@@ -24,7 +24,8 @@
 |---|---|
 | 新建标签页 | `Ctrl+Shift+T` |
 | 新建标签页并选择 shell | `Ctrl+Shift+S` |
-| 切换配色方案 | `Ctrl+Shift+A` |
+| 全选（copy mode 组合） | `Ctrl+Shift+A` |
+| 关闭分屏（需确认） | `Ctrl+Shift+Q` |
 | 左右分屏 | `Ctrl+Shift+\` |
 | 上下分屏 | `Ctrl+Shift+-` |
 | pane 焦点（左 / 右 / 上 / 下） | `Alt+←` / `Alt+→` / `Alt+↑` / `Alt+↓` |
@@ -35,6 +36,8 @@
 
 `show-keys` 会把大写 ASCII 字母键显示成 `CTRL S`、`CTRL A` 这类省略 SHIFT 的形式（只有大写字母会折叠 SHIFT），实际匹配的仍是 `Ctrl+Shift+S` / `Ctrl+Shift+A`；`?` 这类标点保留 SHIFT，显示成 `SHIFT | CTRL ?`。另外 `\` / `-` / `?` 还同时注册了 shifted 字符（`|` / `_` / `/`）的拼写，Ctrl+Shift 下无论事件按哪种字符投递都能命中。
 
+`Ctrl+Shift+A` 的全选不是原生 `SelectAll`（WezTerm 20240203 没有这个动作），而是 `ActivateCopyMode` + 跳到回滚顶部 + `Cell` 选区 + 跳到回滚底部的 `Multiple` 组合；自动化测试只断言这个动作被正确构造，真实按键后的选区效果需要在窗口里手动冒烟一次。
+
 加自定义键：在 `modules/keys.lua` 的 `M.entries` 里加一条 `{ key, mods, label, run }`，`Ctrl+Shift+?` 帮助浮层会自动收录并执行它。
 
 ## 外观
@@ -44,13 +47,12 @@
 
 ## 自定义配色
 
-- `colors/*.toml` 由 WezTerm 原生加载：TOML 里有 `[metadata] name` 时用它作方案名，没有时才用文件名（去掉 `.toml`）。`Ctrl+Shift+A` 列表显示的名字与 WezTerm 实际加载的方案名一致，否则选中后会报 “scheme not found”。`colors/example.toml` 没有 metadata，所以它会以 `example` 这个名字出现在列表里。
+- 换配色不再有选择器：改 `modules/settings.lua` 的 `default_scheme`，再按 `Ctrl+Shift+R` 重载（或重启）。默认是内置方案 `Catppuccin Mocha`。
+- `default_scheme` 既可以是内置方案名，也可以是 `colors/` 下某个文件的**文件名（不含 `.toml`）**；按文件名找到文件后，实际生效的仍是该文件 `[metadata] name` 里的真实方案名。两者都匹配不到时告警并落回 WezTerm 默认配色。
+- `colors/*.toml` 由 WezTerm 原生加载：TOML 里有 `[metadata] name` 时用它作方案名，没有时才用文件名（去掉 `.toml`）。`colors/example.toml` 没有 metadata，所以填 `default_scheme = 'example'` 就能生效。
 - `modules/colors.lua` 在配置加载时把 `<配置目录>/colors` 写进 `config.color_scheme_dirs`；即使通过 `--config-file` 从默认配置目录之外启动，这些自定义方案也会注册进 WezTerm（原生 TOML 加载，不靠本仓库扫描文件）。
 - 与内置方案同名时会覆盖内置方案（这是 WezTerm 文档行为，本仓库未在命令行里单独实测）。
-- `Ctrl+Shift+A` 打开选择器，输入可模糊过滤；列表顺序 `[最近]`（最多 5 条，跨配置重载保留）→ `[自定义]` → 内置（按名称排序）。
-- 选中后通过 `set_config_overrides` 只改当前窗口的配色，不写盘，也不冲掉其他 override；重启回到 `modules/settings.lua` 的 `default_scheme`（默认 `Catppuccin Mocha`）。
-- `default_scheme` 既可以是内置方案名，也可以是 `colors/` 下某个文件的**文件名（不含 `.toml`）**；按文件名找到文件后，实际生效的仍是该文件 `[metadata] name` 里的真实方案名。两者都匹配不到时告警并落回 WezTerm 默认配色。
-- 改 `default_scheme` 或往 `colors/` 放新文件后按 `Ctrl+Shift+R` 重载：列表会刷新，然后选中即生效。
+- 内置方案已有 1000+ 套，想换内置配色直接把方案名填进 `default_scheme` 即可。
 
 ## 自定义 shell
 
@@ -75,8 +77,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\verify.ps1
 
 - 用真实 `wezterm` 二进制跑（优先 `PATH` 里的 `wezterm`，否则 `C:\Program Files\WezTerm\wezterm.exe`）。
 - 先加载 `tests/harness.lua` 跑 `tests/cases/*.lua`（settings / appearance / shells / colors / keys / pickers），输出 `SUMMARY pass=… fail=…`；有 `FAIL` 即退出码 1。
-- 再对真实入口 `wezterm.lua` 做两道门禁：`ls-fonts` 必须打出 `Primary font:` 且没有 `ERROR` / `runtime error`（证明配置真的加载成功，而不是静默回退默认值）；`show-keys` 必须含 `ALT LeftArrow` 与 `SHIFT | CTRL ?` 的 `EmitEvent`（证明自定义键表生效）。
-- 全绿输出 `ALL PASS`（当前 232 条断言）。
+- 再对真实入口 `wezterm.lua` 做两道门禁：`ls-fonts` 必须打出 `Primary font:` 且没有 `ERROR` / `runtime error`（证明配置真的加载成功，而不是静默回退默认值）；`show-keys` 必须含 `ALT LeftArrow`、`SHIFT | CTRL ?`、`CTRL A`、`CTRL Q` 的 `EmitEvent`（证明自定义键表生效；动作构造失败会静默回退默认键表，这四条会同时消失）。
+- 全绿输出 `ALL PASS`（当前 217 条断言）。
 
 ## 部署
 
