@@ -20,7 +20,11 @@ try {
   $deadline = (Get-Date).AddSeconds(10)
   while (-not (Test-Path $out) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 200 }
 
-  $lines = Get-Content $out -ErrorAction SilentlyContinue
+  # The harness writes BOM-less UTF-8; Windows PowerShell 5.1 decodes Get-Content as
+  # ANSI by default, which mangles the Chinese assertion names, so force UTF8.
+  # Keep this script ASCII-only: without a BOM, multi-byte comment bytes can swallow
+  # following newlines under the ANSI decoder and silently comment out the next line.
+  $lines = Get-Content -Encoding UTF8 $out -ErrorAction SilentlyContinue
   if (-not $lines) { Write-Error "test harness produced no output: $out"; exit 1 }
   $lines | ForEach-Object { Write-Host $_ }
   $summary = $lines | Where-Object { $_ -like 'SUMMARY*' }
@@ -81,6 +85,11 @@ try {
   $missing = @()
   if ($keyText -notmatch 'ALT\s+LeftArrow\s+->\s+EmitEvent') { $missing += 'ALT LeftArrow' }
   if ($keyText -notmatch 'SHIFT \| CTRL\s+\?\s+->\s+EmitEvent') { $missing += 'SHIFT|CTRL ?' }
+  # 20240203 has no SelectAll: CTRL A is a copy-mode combo and CTRL Q closes the pane.
+  # Any action that fails to construct at load time makes the whole config silently fall
+  # back to the default key table, so both lines must really appear in show-keys.
+  if ($keyText -notmatch 'CTRL\s+A\s+->\s+EmitEvent') { $missing += 'CTRL A' }
+  if ($keyText -notmatch 'CTRL\s+Q\s+->\s+EmitEvent') { $missing += 'CTRL Q' }
   if ($missing.Count -gt 0) {
     Write-Host ('show-keys is missing custom bindings: ' + ($missing -join ', '))
     Write-Error 'real entrypoint keys not applied (show-keys shows defaults)'
