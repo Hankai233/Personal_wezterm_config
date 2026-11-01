@@ -34,7 +34,7 @@ try {
   # Pin the assertion count so deleting assertions cannot pass silently: a harness that
   # reports 'pass=0 fail=0' still has a SUMMARY line and no FAIL lines. Bump this number
   # (and README.md) together with any intentional change to the assertion count.
-  $expectedPass = 217
+  $expectedPass = 199
   $summaryLine = [string]($summary | Select-Object -First 1)
   if ($summaryLine -notmatch 'pass=(\d+) fail=(\d+)') { Write-Error ("unparsable SUMMARY line: " + $summaryLine); exit 1 }
   if ([int]$matches[1] -ne $expectedPass) {
@@ -94,10 +94,9 @@ try {
   $missing = @()
   if ($keyText -notmatch 'ALT\s+LeftArrow\s+->\s+EmitEvent') { $missing += 'ALT LeftArrow' }
   if ($keyText -notmatch 'SHIFT \| CTRL\s+\?\s+->\s+EmitEvent') { $missing += 'SHIFT|CTRL ?' }
-  # 20240203 has no SelectAll: CTRL A is a copy-mode combo and CTRL Q closes the pane.
-  # Any action that fails to construct at load time makes the whole config silently fall
-  # back to the default key table, so both lines must really appear in show-keys.
-  if ($keyText -notmatch 'CTRL\s+A\s+->\s+EmitEvent') { $missing += 'CTRL A' }
+  # CTRL Q closes the current pane. Any action that fails to construct at load time makes
+  # the whole config silently fall back to the default key table, so all of these lines
+  # must really appear in show-keys. CTRL A is deliberately unbound (no select-all).
   if ($keyText -notmatch 'CTRL\s+Q\s+->\s+EmitEvent') { $missing += 'CTRL Q' }
   if ($missing.Count -gt 0) {
     Write-Host ('show-keys is missing custom bindings: ' + ($missing -join ', '))

@@ -24,7 +24,6 @@
 |---|---|
 | 新建标签页 | `Ctrl+Shift+T` |
 | 新建标签页并选择 shell | `Ctrl+Shift+S` |
-| 全选（copy mode 组合） | `Ctrl+Shift+A` |
 | 关闭分屏（需确认） | `Ctrl+Shift+Q` |
 | 左右分屏 | `Ctrl+Shift+\` |
 | 上下分屏 | `Ctrl+Shift+-` |
@@ -34,9 +33,9 @@
 | 快捷键帮助（选中即执行） | `Ctrl+Shift+?` |
 | 粘贴 | 鼠标右键单击 |
 
-`show-keys` 会把大写 ASCII 字母键显示成 `CTRL S`、`CTRL A` 这类省略 SHIFT 的形式（只有大写字母会折叠 SHIFT），实际匹配的仍是 `Ctrl+Shift+S` / `Ctrl+Shift+A`；`?` 这类标点保留 SHIFT，显示成 `SHIFT | CTRL ?`。另外 `\` / `-` / `?` 还同时注册了 shifted 字符（`|` / `_` / `/`）的拼写，Ctrl+Shift 下无论事件按哪种字符投递都能命中。
+`show-keys` 会把大写 ASCII 字母键显示成 `CTRL S` 这类省略 SHIFT 的形式（只有大写字母会折叠 SHIFT），实际匹配的仍是 `Ctrl+Shift+S`；`?` 这类标点保留 SHIFT，显示成 `SHIFT | CTRL ?`。另外 `\` / `-` / `?` 还同时注册了 shifted 字符（`|` / `_` / `/`）的拼写，Ctrl+Shift 下无论事件按哪种字符投递都能命中。
 
-`Ctrl+Shift+A` 的全选不是原生 `SelectAll`（WezTerm 20240203 没有这个动作），而是 `ActivateCopyMode` + 跳到回滚顶部 + `Cell` 选区 + 跳到回滚底部的 `Multiple` 组合；自动化测试只断言这个动作被正确构造，真实按键后的选区效果需要在窗口里手动冒烟一次。
+`Ctrl+Shift+A` 不绑定任何动作（曾用于配色选择器与原生的「全选」模拟，均已移除，恢复成默认行为）。
 
 加自定义键：在 `modules/keys.lua` 的 `M.entries` 里加一条 `{ key, mods, label, run }`，`Ctrl+Shift+?` 帮助浮层会自动收录并执行它。
 
@@ -77,8 +76,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\verify.ps1
 
 - 用真实 `wezterm` 二进制跑（优先 `PATH` 里的 `wezterm`，否则 `C:\Program Files\WezTerm\wezterm.exe`）。
 - 先加载 `tests/harness.lua` 跑 `tests/cases/*.lua`（settings / appearance / shells / colors / keys / pickers），输出 `SUMMARY pass=… fail=…`；有 `FAIL` 即退出码 1。
-- 再对真实入口 `wezterm.lua` 做两道门禁：`ls-fonts` 必须打出 `Primary font:` 且没有 `ERROR` / `runtime error`（证明配置真的加载成功，而不是静默回退默认值）；`show-keys` 必须含 `ALT LeftArrow`、`SHIFT | CTRL ?`、`CTRL A`、`CTRL Q` 的 `EmitEvent`（证明自定义键表生效；动作构造失败会静默回退默认键表，这四条会同时消失）。
-- 全绿输出 `ALL PASS`（当前 217 条断言）。
+- 再对真实入口 `wezterm.lua` 做两道门禁：`ls-fonts` 必须打出 `Primary font:` 且没有 `ERROR` / `runtime error`（证明配置真的加载成功，而不是静默回退默认值）；`show-keys` 必须含 `ALT LeftArrow`、`SHIFT | CTRL ?`、`CTRL Q` 的 `EmitEvent`（证明自定义键表生效；动作构造失败会静默回退默认键表，这几条会同时消失）。
+- 全绿输出 `ALL PASS`（当前 199 条断言；`tests/verify.ps1` 会钉住这个数字，删断言不会静默通过）。
 
 ## 部署
 
