@@ -20,10 +20,10 @@ try {
   $deadline = (Get-Date).AddSeconds(10)
   while (-not (Test-Path $out) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 200 }
 
-  # The harness writes BOM-less UTF-8; Windows PowerShell 5.1 decodes Get-Content as
-  # ANSI by default, which mangles the Chinese assertion names, so force UTF8.
-  # Keep this script ASCII-only: without a BOM, multi-byte comment bytes can swallow
-  # following newlines under the ANSI decoder and silently comment out the next line.
+  # The harness writes BOM-less UTF-8; Windows PowerShell 5.1 decodes files as ANSI by
+  # default (ACP 936 here), which turns the Chinese assertion names into mojibake, so
+  # force UTF8. Keep this script ASCII-only for the same reason: a BOM-less script with
+  # non-ASCII characters is decoded as ANSI by 5.1 as well, so its text would be mangled.
   $lines = Get-Content -Encoding UTF8 $out -ErrorAction SilentlyContinue
   if (-not $lines) { Write-Error "test harness produced no output: $out"; exit 1 }
   $lines | ForEach-Object { Write-Host $_ }
@@ -31,6 +31,15 @@ try {
   if (-not $summary) { Write-Error 'no SUMMARY line'; exit 1 }
   $fails = @($lines | Where-Object { $_ -like 'FAIL*' })
   if ($fails.Count -gt 0) { Write-Error ("failed assertions: " + $fails.Count); exit 1 }
+  # Pin the assertion count so deleting assertions cannot pass silently: a harness that
+  # reports 'pass=0 fail=0' still has a SUMMARY line and no FAIL lines. Bump this number
+  # (and README.md) together with any intentional change to the assertion count.
+  $expectedPass = 217
+  $summaryLine = [string]($summary | Select-Object -First 1)
+  if ($summaryLine -notmatch 'pass=(\d+) fail=(\d+)') { Write-Error ("unparsable SUMMARY line: " + $summaryLine); exit 1 }
+  if ([int]$matches[1] -ne $expectedPass) {
+    Write-Error ("unexpected assertion count: pass=" + $matches[1] + ", expected " + $expectedPass); exit 1
+  }
 
   # Real-entrypoint gate: the suite above loads tests/harness.lua, which is a different
   # entrypoint from the shipped wezterm.lua -> require 'init'. Assert the real entrypoint
