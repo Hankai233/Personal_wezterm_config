@@ -34,7 +34,7 @@ try {
   # Pin the assertion count so deleting assertions cannot pass silently: a harness that
   # reports 'pass=0 fail=0' still has a SUMMARY line and no FAIL lines. Bump this number
   # (and README.md) together with any intentional change to the assertion count.
-  $expectedPass = 199
+  $expectedPass = 285
   $summaryLine = [string]($summary | Select-Object -First 1)
   if ($summaryLine -notmatch 'pass=(\d+) fail=(\d+)') { Write-Error ("unparsable SUMMARY line: " + $summaryLine); exit 1 }
   if ([int]$matches[1] -ne $expectedPass) {
@@ -94,10 +94,13 @@ try {
   $missing = @()
   if ($keyText -notmatch 'ALT\s+LeftArrow\s+->\s+EmitEvent') { $missing += 'ALT LeftArrow' }
   if ($keyText -notmatch 'SHIFT \| CTRL\s+\?\s+->\s+EmitEvent') { $missing += 'SHIFT|CTRL ?' }
-  # CTRL Q closes the current pane. Any action that fails to construct at load time makes
-  # the whole config silently fall back to the default key table, so all of these lines
-  # must really appear in show-keys. CTRL A is deliberately unbound (no select-all).
+  # CTRL Q closes the current pane, CTRL H opens the SSH host picker, CTRL Y cycles the
+  # SSH sort mode. Any action that fails to construct at load time makes the whole config
+  # silently fall back to the default key table, so all of these lines must really appear
+  # in show-keys. CTRL A is deliberately unbound (no select-all).
   if ($keyText -notmatch 'CTRL\s+Q\s+->\s+EmitEvent') { $missing += 'CTRL Q' }
+  if ($keyText -notmatch 'CTRL\s+H\s+->\s+EmitEvent') { $missing += 'CTRL H' }
+  if ($keyText -notmatch 'CTRL\s+Y\s+->\s+EmitEvent') { $missing += 'CTRL Y' }
   if ($missing.Count -gt 0) {
     Write-Host ('show-keys is missing custom bindings: ' + ($missing -join ', '))
     Write-Error 'real entrypoint keys not applied (show-keys shows defaults)'

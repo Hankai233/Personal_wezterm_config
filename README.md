@@ -1,6 +1,6 @@
 # WezTerm 配置
 
-零第三方依赖，按功能拆成模块。改行为先看 `modules/settings.lua`，那里是唯一常量区；其余模块只读它。
+零第三方依赖，按功能拆成模块。行为开关在 `modules/settings.lua`，SSH 主机清单在 `modules/ssh_hosts.lua`；其余模块只读它们。
 
 ## 目录结构
 
@@ -8,10 +8,13 @@
 |---|---|
 | `wezterm.lua` | 真正的入口：把配置目录加进 `package.path`，再 `require 'init'` |
 | `init.lua` | 组装 `config`：字体 → 配色 → 默认 shell → 快捷键 |
-| `modules/settings.lua` | 唯一常量区：字体、字号、shell 列表、默认配色、scrollback、窗口内边距 |
+| `modules/settings.lua` | 行为开关：字体、字号、shell 列表、默认配色、scrollback、窗口内边距 |
 | `modules/appearance.lua` | 应用字体 / 行高 / `harfbuzz_features` |
 | `modules/shells.lua` | 默认 shell 探测与回退、`Ctrl+Shift+S` 菜单 |
 | `modules/colors.lua` | 初始配色与 `colors/` 目录注册 |
+| `modules/ssh_hosts.lua` | SSH 主机清单（只放数据） |
+| `modules/ssh.lua` | SSH argv 生成、排序、`Ctrl+Shift+H` 菜单 |
+| `modules/proc.lua` | 同步可执行文件探测（shells 与 ssh 共用） |
 | `modules/keys.lua` | 自定义键、鼠标绑定、`Ctrl+Shift+?` 帮助浮层 |
 | `colors/example.toml` | 自定义配色模板（带注释） |
 | `tests/` | `harness.lua` + `cases/*.lua` + `verify.ps1` |
@@ -24,6 +27,8 @@
 |---|---|
 | 新建标签页 | `Ctrl+Shift+T` |
 | 新建标签页并选择 shell | `Ctrl+Shift+S` |
+| 连接 SSH 主机（可筛选） | `Ctrl+Shift+H` |
+| 切换 SSH 排序模式 | `Ctrl+Shift+Y` |
 | 关闭分屏（需确认） | `Ctrl+Shift+Q` |
 | 左右分屏 | `Ctrl+Shift+\` |
 | 上下分屏 | `Ctrl+Shift+-` |
@@ -68,6 +73,35 @@
 - 菜单在按键时才枚举，只列出 `prog` 存在的项；WSL 项是 `wsl.exe -d Debian`（不带 `--cd`）。
 - 全部候选都探测不到时，回退到 `shells_order` 里最后定义的 shell，并写一条 `log_warn`。
 
+## SSH 主机
+
+改 `modules/ssh_hosts.lua`（只放数据）。连接走本机 OpenSSH（`ssh.exe`），所以你的密钥、ssh-agent、`ProxyJump`、`~/.ssh/config` 都照旧生效。
+
+| 字段 | 含义 |
+|---|---|
+| `name` | 菜单显示名，必填；「最近使用」按它记忆 |
+| `host` | 主机名或 IP，必填 |
+| `user` | 登录用户，省略则用当前 Windows 用户名 |
+| `port` | 端口，省略或 22 时不加 `-p` |
+| `identity` | 私钥路径，填了就加 `-i` |
+| `group` | 分组，菜单显示为 `[group]` 前缀，也用于按组排序/筛选 |
+| `extra` | 额外参数数组，如 `{ '-o', 'ProxyJump=bastion', '-A' }` |
+| `note` | 备注，只显示在菜单里，不传给 ssh |
+
+```lua
+hosts = {
+  { name = 'home-server', host = '10.0.0.5', user = 'hanka', group = 'lan', note = '路由器后面' },
+  { name = 'vps', host = 'example.com', user = 'root', port = 2222,
+    identity = 'C:/Users/Hanka/.ssh/id_ed25519', group = 'cloud' },
+}
+```
+
+- `Ctrl+Shift+H` 打开主机菜单：`InputSelector` 自带模糊筛选，直接打 `cloud` 就只剩云主机。
+- 最终命令固定为 `ssh.exe [-p 端口] [-i 私钥] <extra...> [user@]host`，在新标签页里跑。
+- `Ctrl+Shift+Y` 循环切换排序：`recent`（最近用过的靠前，最多记 10 条）→ `name`（不区分大小写）→ `group`（按分组，无分组的排最后）。选择记在 `wezterm.GLOBAL`，重启仍在。
+- 清单为空或找不到 `ssh.exe` 时不弹空壳菜单，直接 `log_warn` 说明原因。
+- 不自动导入 `~/.ssh/config` 的 Host 别名：走 OpenSSH 时你本来就能直接 `ssh 别名`。
+
 ## 自检
 
 ```powershell
@@ -75,9 +109,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\verify.ps1
 ```
 
 - 用真实 `wezterm` 二进制跑（优先 `PATH` 里的 `wezterm`，否则 `C:\Program Files\WezTerm\wezterm.exe`）。
-- 先加载 `tests/harness.lua` 跑 `tests/cases/*.lua`（settings / appearance / shells / colors / keys / pickers），输出 `SUMMARY pass=… fail=…`；有 `FAIL` 即退出码 1。
-- 再对真实入口 `wezterm.lua` 做两道门禁：`ls-fonts` 必须打出 `Primary font:` 且没有 `ERROR` / `runtime error`（证明配置真的加载成功，而不是静默回退默认值）；`show-keys` 必须含 `ALT LeftArrow`、`SHIFT | CTRL ?`、`CTRL Q` 的 `EmitEvent`（证明自定义键表生效；动作构造失败会静默回退默认键表，这几条会同时消失）。
-- 全绿输出 `ALL PASS`（当前 199 条断言；`tests/verify.ps1` 会钉住这个数字，删断言不会静默通过）。
+- 先加载 `tests/harness.lua` 跑 `tests/cases/*.lua`（settings / appearance / shells / colors / keys / pickers / proc / ssh），输出 `SUMMARY pass=… fail=…`；有 `FAIL` 即退出码 1。
+- 再对真实入口 `wezterm.lua` 做两道门禁：`ls-fonts` 必须打出 `Primary font:` 且没有 `ERROR` / `runtime error`（证明配置真的加载成功，而不是静默回退默认值）；`show-keys` 必须含 `ALT LeftArrow`、`SHIFT | CTRL ?`、`CTRL Q`、`CTRL H`、`CTRL Y` 的 `EmitEvent`（证明自定义键表生效；动作构造失败会静默回退默认键表，这几条会同时消失）。
+- 全绿输出 `ALL PASS`（当前 285 条断言；`tests/verify.ps1` 会钉住这个数字，删断言不会静默通过）。
 
 ## 部署
 

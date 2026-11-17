@@ -1,6 +1,8 @@
 local wezterm = require 'wezterm'
 local settings = require 'modules.settings'
 local shells = require 'modules.shells'
+local ssh = require 'modules.ssh'
+local ssh_hosts = require 'modules.ssh_hosts'
 
 local M = {}
 
@@ -19,6 +21,8 @@ M.entries = {
   { key = 'T', mods = 'CTRL|SHIFT', label = '新建标签页', run = do_action(wezterm.action.SpawnTab 'CurrentPaneDomain') },
   { key = 'S', mods = 'CTRL|SHIFT', label = '新建标签页并选择 shell', run = shells.picker_action(settings) },
   { key = 'Q', mods = 'CTRL|SHIFT', label = '关闭分屏', run = do_action(wezterm.action.CloseCurrentPane { confirm = true }) },
+  { key = 'H', mods = 'CTRL|SHIFT', label = '连接 SSH 主机', run = ssh.picker_action(ssh_hosts) },
+  { key = 'Y', mods = 'CTRL|SHIFT', label = '切换 SSH 排序模式', run = ssh.cycle_sort_action(ssh_hosts) },
   {
     key = '\\',
     mods = 'CTRL|SHIFT',
